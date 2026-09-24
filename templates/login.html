@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تسجيل الدخول — {{ school_name }}</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<style>
+  body{display:grid;place-items:center;min-height:100vh;
+       background:linear-gradient(135deg,var(--brand-tint) 0%,var(--bg) 45%,var(--accent-soft) 100%)}
+  .loginbox{width:min(390px,92vw);background:var(--card);border:1px solid var(--line);
+            border-radius:18px;padding:2rem 1.7rem;box-shadow:var(--shadow-2);
+            text-align:center}
+  .loginbox img{height:96px;margin-bottom:.7rem}
+  .loginbox h1{font-size:1.18rem;margin:0 0 .15rem}
+  .loginbox p{color:var(--muted);font-size:.87rem;margin:0 0 1.3rem}
+  .loginbox label{text-align:right}
+  .loginbox .btn{width:100%;margin-top:.9rem;padding:.62rem}
+  .foot{margin-top:1.1rem;font-size:.78rem;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<form class="loginbox" method="post" autocomplete="on">
+  <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ school_name }}">
+  <h1>نظام إدارة الجدول المدرسي</h1>
+  <p>أدخل كلمة المرور للمتابعة</p>
+
+  {% if error %}<div class="note err" style="text-align:right">{{ error }}</div>{% endif %}
+
+  <label for="pw">كلمة المرور</label>
+  <input type="password" id="pw" name="password" required autofocus
+         autocomplete="current-password" placeholder="••••••••">
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn">دخول</button>
+
+  <div class="foot">هذه الصفحة تحمي بيانات المدرسة — لا تشارك كلمة المرور خارج الإدارة.</div>
+</form>
+
+</body>
+</html>

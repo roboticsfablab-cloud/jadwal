@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>كل الإسنادات</h1>
+{% include "assign_nav.html" %}
+
+<div id="toast" class="toast"></div>
+
+<div class="card">
+  <div class="toolbar">
+    <h2 style="margin:0">الإسنادات ({{ rows|length }})</h2>
+    <div class="spacer"></div>
+    <input type="text" id="filter" placeholder="بحث بالفصل أو المادة أو المعلم"
+           style="max-width:260px">
+    <button class="btn" id="saveTop">حفظ الكل</button>
+  </div>
+
+  <div class="gridwrap" style="overflow:visible">
+  <table class="data editable" id="tbl">
+    <thead>
+      <tr>
+        <th>الفصل</th><th>المادة</th><th style="min-width:160px">المعلم</th>
+        <th style="width:100px">حصص</th><th style="width:100px">مزدوجة</th>
+        <th style="min-width:130px">المعمل</th><th style="width:1%"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in rows %}
+      <tr data-id="{{ a.id }}"
+          data-search="{{ a.section_label }} {{ a.subject_name }} {{ a.teacher_name }}">
+        <td>{{ a.section_label }}</td>
+        <td>{{ a.subject_name }}
+          {% if a.default_periods %}<span class="badge">نصابها {{ a.default_periods }}</span>{% endif %}
+        </td>
+        <td>
+          <select class="f-teacher">
+            {% for t in teachers %}
+              <option value="{{ t.id }}" {% if t.id == a.teacher_id %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input type="number" class="f-per" min="1" max="40" value="{{ a.periods_per_week }}" style="width:80px"></td>
+        <td><input type="number" class="f-dbl" min="0" max="6" value="{{ a.double_periods }}" style="width:80px"></td>
+        <td>
+          <select class="f-room">
+            <option value="">—</option>
+            {% for r in rooms %}
+              <option value="{{ r.id }}" {% if r.id == a.room_id %}selected{% endif %}>{{ r.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('delete_assignment', rid=a.id) }}" class="inline">
+            <button class="btn sm danger">حذف</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="hint">لا توجد إسنادات بعد —
+        ابدأ من <a href="{{ url_for('assign_by_teacher') }}">شاشة المعلم</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="toolbar" style="margin-top:.8rem">
+    <button class="btn" id="saveBottom">حفظ الكل</button>
+    <span class="hint" style="margin:0">لا حاجة لحفظ كل صف — عدّل ما شئت ثم احفظ مرة واحدة.</span>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toast(text, bad) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+
+async function saveAll() {
+  const rows = [...document.querySelectorAll('#tbl tbody tr[data-id]')].map(tr => ({
+    id: +tr.dataset.id,
+    teacher_id: +tr.querySelector('.f-teacher').value,
+    periods_per_week: +tr.querySelector('.f-per').value,
+    double_periods: +tr.querySelector('.f-dbl').value,
+    room_id: tr.querySelector('.f-room').value || null
+  }));
+  const r = await fetch('{{ url_for("api_assign_bulk") }}', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({rows})
+  }).then(x => x.json());
+  toast(r.message || 'تم الحفظ', !r.ok);
+}
+document.getElementById('saveTop').onclick = saveAll;
+document.getElementById('saveBottom').onclick = saveAll;
+
+const filter = document.getElementById('filter');
+filter.oninput = () => {
+  const v = filter.value.trim();
+  document.querySelectorAll('#tbl tbody tr[data-search]').forEach(tr => {
+    tr.style.display = !v || tr.dataset.search.indexOf(v) !== -1 ? '' : 'none';
+  });
+};
+</script>
+{% endblock %}

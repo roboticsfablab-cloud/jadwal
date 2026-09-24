@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>فحص سلامة النظام</h1>
+<p class="hint">
+  يقارن الإسناد بالجدول المولَّد ويكشف التناقضات الصامتة — مثل حصص موضوعة
+  في الجدول لا يقابلها إسناد، فتظهر أرقام خاطئة في صفحة المعلمات وميزان الفصول.
+</p>
+
+<div class="card status {{ 'bad' if errors else ('warn' if warnings else 'good') }}">
+  <div class="toolbar" style="margin:0">
+    <span class="statusicon {{ 'bad' if errors else ('warn' if warnings else 'good') }}"
+          style="cursor:default">
+      {% if errors %}!{% elif warnings %}؟{% else %}✓{% endif %}
+    </span>
+    <div style="flex:1">
+      <b>
+        {% if errors %}{{ errors|length }} خطأ و{{ warnings|length }} تنبيه
+        {% elif warnings %}لا أخطاء — {{ warnings|length }} تنبيه
+        {% else %}النظام سليم: لا أخطاء ولا تنبيهات{% endif %}
+      </b>
+      <small class="hint" style="display:block;margin:0">
+        آخر فحص: الآن · النسخة المفعّلة: {{ active_version.name if active_version }}
+      </small>
+    </div>
+    {% if results | selectattr('fixable') | list %}
+      <form method="post" action="{{ url_for('doctor_fix') }}" class="inline">
+        <button class="btn" onclick="return confirm('سيُصحَّح ما يمكن إصلاحه بأمان، وتُحفظ لقطة قبله. متابعة؟')">
+          إصلاح تلقائي آمن
+        </button>
+      </form>
+    {% endif %}
+    <a class="btn soft" href="{{ url_for('doctor_page') }}">إعادة الفحص</a>
+  </div>
+</div>
+
+{% for r in results %}
+  <div class="card">
+    <h2>
+      {% if r.level == 'err' %}<span class="badge err">خطأ</span>
+      {% else %}<span class="badge warn">تنبيه</span>{% endif %}
+      {{ r.title }}
+      <span class="badge">{{ r.rows|length }}</span>
+      {% if r.fixable %}<span class="badge ok">قابل للإصلاح تلقائياً</span>{% endif %}
+    </h2>
+    {% if r.detail %}<p class="hint">{{ r.detail }}</p>{% endif %}
+    <table class="data">
+      {% for x in r.rows[:40] %}
+        <tr><td>{{ x.text }}</td></tr>
+      {% endfor %}
+      {% if r.rows|length > 40 %}
+        <tr><td class="hint">… و{{ r.rows|length - 40 }} حالة أخرى</td></tr>
+      {% endif %}
+    </table>
+  </div>
+{% else %}
+  <div class="card">
+    <div class="note ok">
+      كل الفحوص سليمة: الإسناد يطابق الجدول، لا تعارضات، لا حصص خارج الدوام،
+      ولا إسنادات مكرّرة أو يتيمة.
+    </div>
+  </div>
+{% endfor %}
+
+<div class="card">
+  <h2>ما الذي يُفحص</h2>
+  <table class="data">
+    <tr><td>الإسناد مقابل الجدول المولَّد</td><td class="hint">أهمّ فحص — يكشف الأرقام الخاطئة في صفحة المعلمات والميزان</td></tr>
+    <tr><td>خلايا في الجدول بلا إسناد</td><td class="hint">حصص بقيت بعد حذف إسنادها</td></tr>
+    <tr><td>إسنادات مكرّرة</td><td class="hint">نفس الفصل والمادة والمعلمة مرتين</td></tr>
+    <tr><td>مادة واحدة لفصل عند أكثر من معلمة</td><td class="hint">قد يكون تدريساً مشتركاً أو خطأ</td></tr>
+    <tr><td>خلايا خارج الدوام</td><td class="hint">يوم غير عامل، فسحة، أو بعد حدّ حصص اليوم</td></tr>
+    <tr><td>تعارض معلمة أو فصل</td><td class="hint">حصتان في نفس الخانة</td></tr>
+    <tr><td>حصص في خانات عدم الإتاحة</td><td class="hint">كسر لقيد صارم</td></tr>
+    <tr><td>تجاوز النصاب الأسبوعي</td><td class="hint">إسناد أكبر من طاقة المعلمة</td></tr>
+    <tr><td>ميزان الفصول</td><td class="hint">المُسند ≠ المطلوب</td></tr>
+    <tr><td>بنية ناقصة</td><td class="hint">صفوف بلا فصول، مواد بلا معلمات</td></tr>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,23 @@
+{# شريط أيقونات الإسناد - يُدرَج في أعلى كل شاشة من شاشاته #}
+<div class="iconnav" style="margin-bottom:1rem">
+  <a class="iconcard {{ 'on' if request.endpoint == 'assign_by_teacher' }}"
+     href="{{ url_for('assign_by_teacher') }}">
+    <span class="ic">&#128100;</span>
+    <b>المعلم</b><small>اختر المعلم ومادته ثم فصوله</small>
+  </a>
+  <a class="iconcard {{ 'on' if request.endpoint == 'assign_list' }}"
+     href="{{ url_for('assign_list') }}">
+    <span class="ic">&#128203;</span>
+    <b>كل الإسنادات</b><small>جدول كامل قابل للتعديل</small>
+  </a>
+  <a class="iconcard {{ 'on' if request.endpoint == 'assign_balance' }}"
+     href="{{ url_for('assign_balance') }}">
+    <span class="ic">&#9878;</span>
+    <b>المطلوب والمُسند</b><small>ميزان كل فصل</small>
+  </a>
+  <a class="iconcard {{ 'on' if request.endpoint == 'assign_rooms' }}"
+     href="{{ url_for('assign_rooms') }}">
+    <span class="ic">&#128300;</span>
+    <b>المعامل</b><small>القاعات المشتركة وطاقتها</small>
+  </a>
+</div>

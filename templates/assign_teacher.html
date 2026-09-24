@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>الإسناد حسب المعلم</h1>
+{% include "assign_nav.html" %}
+
+<div id="toast" class="toast"></div>
+
+<div class="card">
+  <div class="row">
+    <div>
+      <label>المعلم</label>
+      <select id="teacher">
+        <option value="">— اختر المعلم —</option>
+        {% for t in teachers %}
+          <option value="{{ t.id }}" data-load="{{ t.load }}" data-cap="{{ t.max_periods_per_week }}">
+            {{ t.name }}{% if t.specialization %} — {{ t.specialization }}{% endif %}
+            ({{ t.nsub }} مادة)
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>المادة</label>
+      <select id="subject" disabled>
+        <option value="">— اختر المعلم أولاً —</option>
+      </select>
+    </div>
+    <div style="max-width:220px">
+      <label>نصاب المعلم</label>
+      <div id="loadBox" class="badge" style="padding:.45rem .7rem">—</div>
+    </div>
+  </div>
+  <p class="hint" id="noSubjects" style="display:none;color:var(--err)">
+    هذا المعلم غير مرتبط بأي مادة. افتح <a href="{{ url_for('subjects_page') }}">شاشة المواد</a>
+    وأضفه إلى المواد التي يُدرّسها.
+  </p>
+</div>
+
+<div class="card" id="panel" style="display:none">
+  <div class="toolbar">
+    <h2 style="margin:0" id="panelTitle">الفصول</h2>
+    <div class="spacer"></div>
+    <span class="badge" id="capNote"></span>
+    <button class="btn soft" id="checkAll">تحديد الكل</button>
+    <button class="btn soft" id="uncheckAll">إلغاء الكل</button>
+    <button class="btn" id="save">حفظ</button>
+  </div>
+  <p class="hint">
+    علّم الفصول التي يُدرّسها، وحدّد عدد حصص كل فصل على حدة —
+    قد يختلف العدد من فصل لآخر. القيمة المقترحة هي نصاب المادة، ولا يُسمح بتجاوزه.
+  </p>
+
+  <div class="gridwrap" style="overflow:visible">
+    <table class="data editable" id="secTable">
+      <thead>
+        <tr>
+          <th style="width:1%"></th>
+          <th>الفصل</th>
+          <th style="width:120px">عدد الحصص</th>
+          <th style="width:120px">منها مزدوجة</th>
+          <th>ملاحظة</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="toolbar" style="margin-top:.8rem">
+    <button class="btn" id="save2">حفظ</button>
+    <span class="hint" id="totalNote" style="margin:0"></span>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const teacherSel = document.getElementById('teacher');
+const subjectSel = document.getElementById('subject');
+const panel      = document.getElementById('panel');
+const tbody      = document.querySelector('#secTable tbody');
+const capNote    = document.getElementById('capNote');
+const loadBox    = document.getElementById('loadBox');
+const totalNote  = document.getElementById('totalNote');
+let CAP = 0;
+
+function toast(text, bad) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+function showLoad() {
+  const o = teacherSel.selectedOptions[0];
+  if (!o || !o.value) { loadBox.textContent = '—'; loadBox.className = 'badge'; return; }
+  const load = +o.dataset.load, cap = +o.dataset.cap;
+  loadBox.textContent = load + ' / ' + cap + ' حصة';
+  loadBox.className = 'badge ' + (load > cap ? 'err' : (load === cap ? 'ok' : ''));
+}
+
+/* اختيار المعلم -> مواده فقط */
+teacherSel.onchange = async () => {
+  showLoad();
+  panel.style.display = 'none';
+  subjectSel.innerHTML = '<option value="">— اختر المادة —</option>';
+  document.getElementById('noSubjects').style.display = 'none';
+  if (!teacherSel.value) { subjectSel.disabled = true; return; }
+
+  const subs = await fetch(`/api/teacher/${teacherSel.value}/subjects`).then(r => r.json());
+  if (!subs.length) {
+    subjectSel.disabled = true;
+    document.getElementById('noSubjects').style.display = 'block';
+    return;
+  }
+  subjectSel.disabled = false;
+  subs.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.name + (s.default_periods ? ` (${s.default_periods} حصص)` : '');
+    subjectSel.appendChild(o);
+  });
+};
+
+/* اختيار المادة -> الفصول تظهر تلقائياً */
+subjectSel.onchange = async () => {
+  if (!subjectSel.value) { panel.style.display = 'none'; return; }
+  const d = await fetch(
+    `/api/teacher/${teacherSel.value}/subject/${subjectSel.value}/sections`
+  ).then(r => r.json());
+
+  CAP = d.default_periods || 0;
+  capNote.textContent = CAP ? `المقترح: ${CAP} حصص لكل فصل` : 'لم يُحدَّد مقترح للمادة';
+  capNote.className = 'badge' + (CAP ? '' : ' warn');
+  document.getElementById('panelTitle').textContent = 'فصول مادة ' + d.subject_name;
+
+  tbody.innerHTML = d.sections.map(s => `
+    <tr data-id="${s.id}" data-label="${s.label}">
+      <td><input type="checkbox" class="pick" ${s.checked ? 'checked' : ''}
+                 style="width:17px;height:17px"></td>
+      <td><b>${s.label}</b></td>
+      <td><input type="number" class="per" min="1" max="40"
+                 value="${s.periods || CAP || 1}" style="width:90px"
+                 ${s.checked ? '' : 'disabled'}></td>
+      <td><input type="number" class="dbl" min="0" max="6" value="${s.doubles}"
+                 style="width:80px" ${s.checked ? '' : 'disabled'}></td>
+      <td class="note-cell hint">${s.taken_by ? 'تُدرّسها أيضاً: ' + s.taken_by : ''}</td>
+    </tr>`).join('');
+  panel.style.display = 'block';
+  tbody.querySelectorAll('.per').forEach(markDiff);
+  recount();
+};
+
+/* تنبيه بصري عند اختلاف عدد الحصص عن المقترح - بلا أي تعديل تلقائي */
+function markDiff(input) {
+  const tr = input.closest('tr');
+  const cell = tr.querySelector('.note-cell');
+  const base = cell.dataset.base !== undefined
+    ? cell.dataset.base : (cell.dataset.base = cell.textContent.trim());
+  const v = +input.value || 0;
+  if (CAP && v !== CAP && !input.disabled) {
+    input.style.borderColor = 'var(--warn)';
+    input.style.background = 'var(--warn-soft)';
+    cell.innerHTML = (base ? base + ' · ' : '') +
+      `<span class="badge warn">يختلف عن المقترح (${CAP})</span>`;
+  } else {
+    input.style.borderColor = '';
+    input.style.background = '';
+    cell.textContent = base;
+  }
+}
+
+/* تفعيل الخانات مع التحديد + التحقق من السقف */
+tbody.addEventListener('change', e => {
+  const tr = e.target.closest('tr');
+  if (e.target.classList.contains('pick')) {
+    const on = e.target.checked;
+    tr.querySelector('.per').disabled = !on;
+    tr.querySelector('.dbl').disabled = !on;
+  }
+  /* النصاب مقترح لا سقف: ننبّه بصرياً ولا نغيّر ما أدخله المستخدم */
+  if (e.target.classList.contains('per')) markDiff(e.target);
+  recount();
+});
+tbody.addEventListener('input', recount);
+
+function recount() {
+  let n = 0, rows = 0;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    if (tr.querySelector('.pick').checked) {
+      n += +tr.querySelector('.per').value || 0;
+      rows++;
+    }
+  });
+  totalNote.textContent = `${rows} فصل · ${n} حصة`;
+}
+
+document.getElementById('checkAll').onclick = () => {
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.querySelector('.pick').checked = true;
+    tr.querySelector('.per').disabled = false;
+    tr.querySelector('.dbl').disabled = false;
+  });
+  recount();
+};
+document.getElementById('uncheckAll').onclick = () => {
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.querySelector('.pick').checked = false;
+    tr.querySelector('.per').disabled = true;
+    tr.querySelector('.dbl').disabled = true;
+  });
+  recount();
+};
+
+/* حفظ بلا إعادة تحميل ولا قفز لأعلى */
+async function save() {
+  const sections = [...tbody.querySelectorAll('tr')]
+    .filter(tr => tr.querySelector('.pick').checked)
+    .map(tr => ({
+      id: +tr.dataset.id, label: tr.dataset.label,
+      periods: +tr.querySelector('.per').value || 1,
+      doubles: +tr.querySelector('.dbl').value || 0
+    }));
+  const r = await fetch('{{ url_for("api_assign_save") }}', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      teacher_id: +teacherSel.value, subject_id: +subjectSel.value, sections
+    })
+  }).then(x => x.json());
+  toast(r.message || (r.ok ? 'تم الحفظ' : 'تعذّر الحفظ'), !r.ok);
+
+  // حدّث نصاب المعلم المعروض
+  const o = teacherSel.selectedOptions[0];
+  if (o) {
+    const before = +o.dataset.load;
+    const now = sections.reduce((a, b) => a + b.periods, 0);
+    o.dataset.load = before; // يُعاد حسابه عند إعادة التحميل
+    showLoad();
+  }
+}
+document.getElementById('save').onclick = save;
+document.getElementById('save2').onclick = save;
+</script>
+{% endblock %}

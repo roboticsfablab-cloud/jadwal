@@ -1,0 +1,11 @@
+# Runtime dependencies only. Local-only tools (pdfplumber, fontTools,
+# pandas) are deliberately excluded to keep the deploy bundle small.
+Flask>=3.1,<4
+# Turso: SQLite in the cloud - identical SQL dialect
+libsql>=0.1.11
+openpyxl>=3.1
+reportlab>=4.2
+arabic-reshaper>=3.0
+python-bidi>=0.6
+# measures the logo for PDF headers
+Pillow>=10.0

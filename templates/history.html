@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>سجل التوليد والتراجع</h1>
+<p class="hint">
+  تُحفظ لقطة كاملة قبل كل عملية تغيّر الجدول: التوليد، التعديل اليدوي، المسح.
+  الاسترجاع نفسه يحفظ لقطة قبله — فحتى التراجع قابل للتراجع.
+</p>
+
+<div class="card">
+  <table class="data">
+    <tr><th>#</th><th>السبب</th><th>التاريخ</th><th></th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.number }}</td>
+      <td>{{ r.change_summary }}</td>
+      <td>{{ r.created_at.replace('T', ' ') }}</td>
+      <td style="width:1%">
+        <form method="post" action="{{ url_for('history_restore', hid=r.id) }}" class="inline">
+          <button class="btn sm ghost" onclick="return confirm('استرجاع هذه اللقطة؟')">استرجاع</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+      <tr><td colspan="4" class="hint">لا توجد لقطات بعد</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>النسخ</h2>
+  <p class="hint">النسخ تتيح لك إنشاء عدة جداول مختلفة وتجربتها، والتبديل بينها من الأعلى.</p>
+  <form method="post" action="{{ url_for('new_version') }}">
+    <div class="row">
+      <div><label>اسم النسخة الجديدة</label>
+        <input type="text" name="name" placeholder="مثال: تجربة بدون حصص متأخرة"></div>
+      <div><label>انسخ حصص نسخة حالية (اختياري)</label>
+        <select name="copy_from">
+          <option value="0">— ابدأ فارغة —</option>
+          {% for v in all_versions %}<option value="{{ v.id }}">{{ v.name }}</option>{% endfor %}
+        </select></div>
+      <div style="max-width:130px"><button class="btn">إنشاء</button></div>
+    </div>
+  </form>
+
+  <table class="data" style="margin-top:.9rem">
+    {% for v in all_versions %}
+    <tr>
+      <td>{{ v.name }}
+        {% if active_version and v.id == active_version.id %}<span class="badge ok">مفعّلة</span>{% endif %}
+      </td>
+      <td>{{ v.created_at.replace('T', ' ') }}</td>
+      <td style="width:1%;white-space:nowrap">
+        {% if not (active_version and v.id == active_version.id) %}
+        <form method="post" action="{{ url_for('activate_version', vid=v.id) }}" class="inline">
+          <button class="btn sm soft">تفعيل</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('delete_version', vid=v.id) }}" class="inline">
+          <button class="btn sm danger" onclick="return confirm('حذف النسخة وكل حصصها؟')">حذف</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% endblock %}

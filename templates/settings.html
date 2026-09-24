@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>الإعدادات</h1>
+
+<form method="post">
+<div class="card">
+  <h2>بيانات المدرسة</h2>
+  <div class="row">
+    <div><label>اسم المدرسة</label>
+      <input type="text" name="school_name" value="{{ st.school_name }}"></div>
+    <div><label>اسم رئيسة الإشراف التعليمي</label>
+      <input type="text" name="manager_name" value="{{ st.manager_name }}"></div>
+    <div><label>المرحلة (تظهر في الطباعة)</label>
+      <input type="text" name="school_stage_label" value="{{ st.school_stage_label }}"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>أيام الدوام وعدد الحصص</h2>
+  <p class="hint">الأيام المختارة فقط هي التي سيوزّع عليها المحرّك.</p>
+  <div class="row" style="gap:.4rem">
+    {% for d in range(7) %}
+      <label class="opt" style="flex:0 0 auto;min-width:0">
+        <input type="checkbox" name="working_days" value="{{ d }}"
+               {% if d in days %}checked{% endif %}>
+        <b>{{ DAY_NAMES[d] }}</b>
+      </label>
+    {% endfor %}
+  </div>
+
+  <div class="row" style="margin-top:.8rem">
+    <div style="max-width:240px"><label>عدد الحصص اليومي (الافتراضي)</label>
+      <input type="number" name="periods_per_day" id="defaultPeriods"
+             min="1" max="12" value="{{ st.periods_per_day }}"></div>
+  </div>
+
+  <h3 style="margin:1rem 0 .2rem;font-size:1rem">عدد الحصص لكل يوم</h3>
+  <p class="hint">
+    اترك الخانة فارغة ليأخذ اليوم العدد الافتراضي، أو اكتب عدداً خاصاً به —
+    مثلاً الخميس 7 وبقية الأيام 8. هذا العدد <b>ملزم</b>: لا يولّد النظام
+    حصة بعده، ولا يسمح لك بإضافة أو نقل حصة إلى خانة خارجه.
+  </p>
+  <div class="row daylimits">
+    {% for d in range(7) %}
+      <div class="daybox {{ '' if d in days else 'off' }}" data-day="{{ d }}">
+        <label>{{ DAY_NAMES[d] }}</label>
+        <input type="number" name="pd_{{ d }}" class="pdinput" min="1" max="12"
+               placeholder="{{ st.periods_per_day }}"
+               value="{{ per_day.get(d|string, '') }}">
+        <small class="hint pdnote" style="margin:.15rem 0 0"></small>
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if grades %}
+  <details class="adder">
+    <summary>تجاوز عدد الحصص لصف معيّن (اختياري)</summary>
+    <div class="row">
+      {% for g in grades %}
+        <div><label>{{ g.stage_name }} / {{ g.name }}</label>
+          <input type="number" name="gp_{{ g.id }}" min="1" max="12"
+                 placeholder="افتراضي" value="{{ gmap.get(g.id|string, '') }}"></div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>
+
+{% if subjects %}
+<div class="card">
+  <h2>المواد الأساسية</h2>
+  <p class="hint">تُفضَّل هذه المواد في الحصص المبكرة عند تفعيل القاعدة المقابلة في شاشة التوليد.</p>
+  <div class="opts">
+    {% for s in subjects %}
+      <label class="opt">
+        <input type="checkbox" name="core_subjects" value="{{ s.id }}"
+               {% if s.id in core %}checked{% endif %}>
+        <b>{{ s.name }}</b>
+      </label>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<button class="btn">حفظ الإعدادات</button>
+</form>
+
+<div class="card" style="margin-top:1rem">
+  <h2>توقيت الحصص والفسحات</h2>
+  <p class="hint">علّم الحصة كفسحة فلا يوضع فيها درس. الأوقات اختيارية وتظهر في الطباعة.</p>
+  <form method="post" action="{{ url_for('save_slots') }}">
+    <div class="row" style="margin-bottom:.7rem">
+      <div style="max-width:200px"><label>عدد الحصص</label>
+        <input type="number" name="count" min="1" max="12" value="{{ slots|length }}"></div>
+    </div>
+    <table class="data">
+      <tr><th>#</th><th>الاسم</th><th>من</th><th>إلى</th><th>فسحة</th></tr>
+      {% for s in slots %}
+      <tr>
+        <td>{{ s.period_number }}</td>
+        <td><input type="text" name="name_{{ s.period_number }}" value="{{ s.name }}"></td>
+        <td><input type="time" name="start_{{ s.period_number }}" value="{{ s.start_time }}"></td>
+        <td><input type="time" name="end_{{ s.period_number }}" value="{{ s.end_time }}"></td>
+        <td style="text-align:center">
+          <input type="checkbox" name="break_{{ s.period_number }}"
+                 {% if s.is_break %}checked{% endif %} style="width:18px;height:18px">
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <button class="btn" style="margin-top:.7rem">حفظ الحصص</button>
+    <span class="hint">تغيير العدد ثم الحفظ يضيف أو يحذف حصصاً من النهاية.</span>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* عدد الحصص الافتراضي ينعكس فوراً على خانات الأيام بلا حاجة للحفظ */
+const dflt = document.getElementById('defaultPeriods');
+const boxes = [...document.querySelectorAll('.daybox')];
+const dayChecks = [...document.querySelectorAll('input[name="working_days"]')];
+
+function refreshDays() {
+  const base = dflt.value || '0';
+  boxes.forEach(box => {
+    const input = box.querySelector('.pdinput');
+    const note = box.querySelector('.pdnote');
+    input.placeholder = base;
+    const custom = input.value.trim();
+    if (!custom) {
+      note.textContent = 'افتراضي: ' + base + ' حصص';
+      note.style.color = '';
+    } else if (+custom === +base) {
+      note.textContent = 'مطابق للافتراضي';
+      note.style.color = '';
+    } else {
+      note.textContent = custom + ' حصص (مخصّص)';
+      note.style.color = 'var(--brand)';
+    }
+  });
+}
+
+function refreshEnabled() {
+  const on = new Set(dayChecks.filter(c => c.checked).map(c => c.value));
+  boxes.forEach(box => {
+    const active = on.has(box.dataset.day);
+    box.classList.toggle('off', !active);
+    box.querySelector('.pdinput').disabled = !active;
+  });
+}
+
+dflt.addEventListener('input', refreshDays);
+document.querySelectorAll('.pdinput').forEach(el =>
+  el.addEventListener('input', refreshDays));
+dayChecks.forEach(c => c.addEventListener('change', refreshEnabled));
+refreshDays();
+refreshEnabled();
+</script>
+{% endblock %}

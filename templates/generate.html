@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>توليد الجدول</h1>
+<p class="hint">
+  القيود الصارمة (تعارض المعلم والشعبة، عدم الإتاحة، الحصص المثبّتة، طاقة المعمل)
+  لا تُكسر أبداً. القواعد أدناه ناعمة — كل ما قلّلتها زادت فرصة التوليد الكامل.
+</p>
+
+{% for e in errors %}<div class="note err">{{ e }}</div>{% endfor %}
+{% for w in warnings %}<div class="note warn">{{ w }}</div>{% endfor %}
+
+<div class="card">
+  <h2>قواعد التوزيع</h2>
+  <div class="opts" id="flags">
+    {% set flags = [
+      ('spread_across_days',        'توزيع المادة على أيام مختلفة', 'يمنع تكديس حصص المادة الواحدة في يوم واحد للشعبة.'),
+      ('no_consecutive_same_subject','لا مادتان متتاليتان',          'يمنع وقوع حصتين من نفس المادة في حصتين متجاورتين (عدا الكتل المزدوجة المقصودة).'),
+      ('main_subjects_early',       'المواد الأساسية مبكراً',        'يضع المواد التي حدّدتها أساسية في الحصص الأولى قدر الإمكان.'),
+      ('minimize_gaps',             'تقليل فراغات المعلم',           'يجعل حصص المعلم في اليوم متصلة قدر الإمكان بلا فجوات.'),
+      ('balanced_time_slots',       'توازن الحصص المبكرة والمتأخرة', 'يوزّع نصيب المعلم بين أوائل اليوم وأواخره بشكل متوازن.'),
+      ('early_finish_day',          'اليوم الذهبي',                  'يحاول منح كل معلم يوماً واحداً على الأقل ينتهي فيه مبكراً أو يكون فارغاً.'),
+      ('limit_same_class_per_day',  'حدّ التكرار مع نفس الشعبة',     'يمنع تكرار المعلم مع نفس الشعبة أكثر من مرتين في اليوم.'),
+      ('respect_teacher_max_daily', 'احترام أقصى حصص يومية',         'يلتزم بأقصى حصص يومية لكل معلم، ولا يُرفع إلا إذا استحال نصابه.')
+    ] %}
+    {% for key, title, desc in flags %}
+      <label class="opt">
+        <input type="checkbox" data-flag="{{ key }}" {% if opt[key] %}checked{% endif %}>
+        <span><b>{{ title }}</b><small>{{ desc }}</small></span>
+      </label>
+    {% endfor %}
+  </div>
+
+  <div class="opts" style="margin-top:.8rem" id="nums">
+    {% set nums = [
+      ('max_consecutive_periods', 'أقصى حصص متتالية للمعلم', 1, 8),
+      ('max_daily_periods',       'أقصى حصص للمعلم في اليوم', 1, 12),
+      ('max_late_days_per_week',  'أقصى أيام ينتهي فيها متأخراً', 0, 7),
+      ('time_limit_seconds',      'السقف الزمني للتوليد (ثانية)', 3, 120),
+      ('restarts',                'عدد المحاولات العشوائية', 1, 30)
+    ] %}
+    {% for key, title, lo, hi in nums %}
+      <label class="opt num">
+        <span style="flex:1"><b>{{ title }}</b></span>
+        <input type="number" data-num="{{ key }}" min="{{ lo }}" max="{{ hi }}" value="{{ opt[key] }}">
+      </label>
+    {% endfor %}
+  </div>
+
+  <label class="opt" style="margin-top:.8rem;max-width:520px">
+    <input type="checkbox" id="keep_pinned" checked>
+    <span><b>الإبقاء على الحصص المثبّتة</b>
+      <small>الحصص التي ثبّتها يدوياً تُوضع أولاً ويُبنى الجدول حولها.</small></span>
+  </label>
+
+  <div class="toolbar" style="margin-top:1rem">
+    <button class="btn" id="run" {% if errors %}disabled{% endif %}>
+      توليد الجدول ({{ lesson_count }} حصة)
+    </button>
+    {% if errors %}
+      <button class="btn soft" id="runSkip"
+              title="يولّد رغم الأخطاء — ستبقى حصص بلا مكان">
+        تخطّي الفحص وتوليد على أي حال
+      </button>
+    {% endif %}
+    <a class="btn soft" href="{{ url_for('grid') }}">عرض الجدول</a>
+    <form method="post" action="{{ url_for('generate_clear') }}" class="inline">
+      <button class="btn danger" onclick="return confirm('سيُمسح الجدول الحالي. متابعة؟')">مسح الجدول</button>
+    </form>
+    {% if errors %}<span class="hint">حلّ الأخطاء أعلاه، أو تخطَّ الفحص على مسؤوليتك.</span>{% endif %}
+  </div>
+</div>
+
+<div class="card" id="result" style="display:none">
+  <h2>النتيجة</h2>
+  <div id="summary"></div>
+  <div id="unplaced"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const runBtn = document.getElementById('run');
+
+function collect() {
+  const o = {};
+  document.querySelectorAll('[data-flag]').forEach(el => o[el.dataset.flag] = el.checked);
+  document.querySelectorAll('[data-num]').forEach(el => o[el.dataset.num] = parseInt(el.value || 0, 10));
+  return o;
+}
+
+async function generate(skipChecks) {
+  runBtn.disabled = true;
+  const original = runBtn.textContent;
+  runBtn.textContent = 'جارٍ توليد الجدول…';
+  const box = document.getElementById('result');
+  const summary = document.getElementById('summary');
+  const detail = document.getElementById('unplaced');
+  box.style.display = 'block';
+  summary.innerHTML = '<div class="note info">يعمل المحرّك الآن…</div>';
+  detail.innerHTML = '';
+
+  try {
+    const res = await fetch('{{ url_for("generate_run") }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        options: collect(),
+        keep_pinned: document.getElementById('keep_pinned').checked,
+        skip_checks: !!skipChecks
+      })
+    });
+    const d = await res.json();
+
+    if (!d.ok) {
+      summary.innerHTML = d.errors.map(e => `<div class="note err">${e}</div>`).join('') +
+        (d.skippable ? '<button class="btn soft" id="forceRun">تخطّي الفحص وتوليد على أي حال</button>' : '');
+      const f = document.getElementById('forceRun');
+      if (f) f.onclick = () => generate(true);
+      return;
+    }
+
+    /* لا نعلن النجاح إلا إذا لم يبقَ تعارض ولا حصة فارغة ولا حصة بلا مكان */
+    const problems = d.unplaced.length + d.conflicts.length + d.empty.length;
+    summary.innerHTML =
+      `<div class="note ${d.clean ? 'ok' : 'warn'}">` +
+      (d.clean
+        ? 'تم توليد الجدول بنجاح — كل الحصص وُضعت، بلا تعارضات وبلا حصص فارغة.'
+        : `وُضعت ${d.placed} من ${d.total} حصة، لكن الجدول غير مكتمل: ` +
+          [d.unplaced.length ? `${d.unplaced.length} بلا مكان` : '',
+           d.conflicts.length ? `${d.conflicts.length} تعارض` : '',
+           d.empty.length ? `${d.empty.length} شعبة فيها خانات فارغة` : '']
+            .filter(Boolean).join(' · ')) +
+      `</div><p class="hint">المحاولات: ${d.attempts} · العقوبة الناعمة: ${d.cost} (الأقل أفضل)</p>` +
+      `<a class="btn" href="{{ url_for('grid') }}">فتح الجدول العام</a>` +
+      (problems ? ` <button class="btn soft" id="skipProblems">تخطّي والمتابعة كما هو</button>` : '');
+
+    let html = '';
+    if (d.conflicts.length) {
+      html += '<h2 style="margin-top:1rem">تعارضات</h2>' +
+        d.conflicts.map(c => `<div class="note err"><b>${c.title}:</b> ${c.detail}</div>`).join('') +
+        '<p class="hint">تُحلّ تلقائياً من زر التعارضات في شاشة الجدول العام.</p>';
+    }
+    if (d.unplaced.length) {
+      html += '<h2 style="margin-top:1rem">حصص لم يُوجد لها مكان</h2>' +
+        '<table class="data"><tr><th>المادة</th><th>الشعبة</th><th>المعلم</th><th>السبب</th></tr>' +
+        d.unplaced.map(u => `<tr><td>${u.subject}${u.length === 2 ? ' (مزدوجة)' : ''}</td>` +
+          `<td>${u.sections}</td><td>${u.teachers}</td><td>${u.reason}</td></tr>`).join('') +
+        '</table>';
+    }
+    if (d.empty.length) {
+      html += '<h2 style="margin-top:1rem">حصص فارغة</h2>' +
+        '<table class="data"><tr><th>الشعبة</th><th>عدد الخانات</th><th>أمثلة</th></tr>' +
+        d.empty.map(e => `<tr><td>${e.section}</td><td>${e.count}</td>` +
+          `<td class="hint">${e.cells.join('، ')}${e.count > 6 ? ' …' : ''}</td></tr>`).join('') +
+        '</table>';
+    }
+    detail.innerHTML = html;
+
+    const skip = document.getElementById('skipProblems');
+    if (skip) skip.onclick = () => {
+      detail.innerHTML = '';
+      summary.innerHTML = '<div class="note info">تم التخطّي — الجدول محفوظ كما هو. ' +
+        `<a href="{{ url_for('grid') }}">افتح الجدول العام</a> للتعديل اليدوي أو الحل التلقائي.</div>`;
+    };
+  } catch (err) {
+    summary.innerHTML = `<div class="note err">تعذّر التوليد: ${err}</div>`;
+  } finally {
+    runBtn.disabled = false;
+    runBtn.textContent = original;
+  }
+}
+
+runBtn.onclick = () => generate(false);
+const skipBtn = document.getElementById('runSkip');
+if (skipBtn) skipBtn.onclick = () => generate(true);
+</script>
+{% endblock %}

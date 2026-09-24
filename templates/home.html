@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block body %}
+
+<div class="hero">
+  <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ school_name }}">
+  <div>
+    <h1 style="margin:0">{{ school_name }}</h1>
+    <p class="hint" style="margin:.15rem 0 0">
+      نظام إدارة الجدول المدرسي — إعداد الجداول وتوزيعها على الفصول والمعلمات
+    </p>
+    <div class="herostats">
+      <span><b>{{ nav_counts.sections }}</b> فصل</span>
+      <span><b>{{ nav_counts.teachers }}</b> معلمة</span>
+      <span><b>{{ nav_counts.subjects }}</b> مادة</span>
+      <span><b>{{ nav_counts.assignments }}</b> إسناد</span>
+      <span><b>{{ nav_counts.schedule }}</b> حصة في الجدول</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h1>معالج الإعداد</h1>
+  <p class="hint">أكمل الخطوات بالترتيب. كل خطوة تُفتح بالضغط على اسمها.</p>
+  <div class="bar"><i style="width: {{ (done / total * 100) | round(0) }}%"></i></div>
+  <ol class="steps">
+    {% for label, ok, href in steps %}
+      <li class="{{ 'done' if ok }}">
+        <span class="dot">{{ '✓' if ok else loop.index }}</span>
+        <span class="t">{{ label }}</span>
+        <a class="btn sm {{ 'soft' if ok else '' }}" href="{{ href }}">
+          {{ 'مراجعة' if ok else 'ابدأ' }}
+        </a>
+      </li>
+    {% endfor %}
+  </ol>
+</div>
+
+{% if errors %}
+<div class="card">
+  <h2>يجب حلّها قبل التوليد</h2>
+  {% for e in errors %}<div class="note err">{{ e }}</div>{% endfor %}
+</div>
+{% endif %}
+
+{% if warnings %}
+<div class="card">
+  <h2>تنبيهات</h2>
+  {% for w in warnings %}<div class="note warn">{{ w }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="grid2">
+  <div class="card">
+    <h2>كيف يعمل النظام؟</h2>
+    <p class="hint">
+      تُدخل المراحل والصفوف والشعب، ثم المواد والمعلمين، ثم تُسند كل مادة لمعلم على كل
+      شعبة مع نصابها الأسبوعي. بعدها يوزّع المحرّك الحصص تلقائياً مع احترام القيود
+      الصارمة، ويحاول تحسين القيود الناعمة قدر الإمكان. تقدر تعدّل أي خانة يدوياً بعدها،
+      وتُحفظ لقطة قبل كل عملية فيمكنك التراجع دائماً.
+    </p>
+  </div>
+  <div class="card">
+    <h2>النسخ الاحتياطية</h2>
+    <p class="hint">بياناتك كلها في ملف <code>school.db</code> بجانب البرنامج.</p>
+    <a class="btn ghost" href="{{ url_for('export_backup') }}">تنزيل نسخة احتياطية</a>
+    <form method="post" action="{{ url_for('import_backup') }}"
+          enctype="multipart/form-data" style="margin-top:.7rem">
+      <label>استيراد نسخة احتياطية (يستبدل كل البيانات)</label>
+      <div class="row">
+        <input type="file" name="file" accept=".json" required>
+        <button class="btn soft" style="flex:0" onclick="return confirm('سيُستبدل كل ما هو موجود. متابعة؟')">استيراد</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

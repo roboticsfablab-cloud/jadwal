@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>خانات عدم الإتاحة — {{ t.name }}</h1>
+<p class="hint">
+  اضغط الخانات التي تريد منع المعلم منها، واضغط اسم اليوم لقفله كاملاً.
+  هذا قيد صارم: لن يضع المحرّك أي حصة في خانة مقفلة.
+</p>
+
+<form method="post">
+<div class="gridwrap">
+  <table class="sched avail" id="av">
+    <tr>
+      <th class="day">اليوم</th>
+      {% for p in range(1, max_p + 1) %}
+        {% set slot = (slots | selectattr('period_number','equalto',p) | list | first) %}
+        <th>{{ slot.name if slot else 'الحصة ' ~ p }}</th>
+      {% endfor %}
+    </tr>
+    {% for d in days %}
+    <tr>
+      <th class="day" data-day="{{ d }}" style="cursor:pointer">{{ DAY_NAMES[d] }}</th>
+      {% for p in range(1, max_p + 1) %}
+        {% set off = (d, p) in blocked %}
+        <td class="{{ 'off' if off }}" data-day="{{ d }}" data-period="{{ p }}">
+          {{ 'غير متاح' if off else '' }}
+          <input type="checkbox" name="cell" value="{{ d }}_{{ p }}"
+                 {% if off %}checked{% endif %} hidden>
+        </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="toolbar" style="margin-top:.8rem">
+  <button class="btn">حفظ</button>
+  <a class="btn soft" href="{{ url_for('teachers_page') }}">رجوع</a>
+  <button type="button" class="btn soft" id="clear">مسح الكل</button>
+</div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const table = document.getElementById('av');
+
+function toggle(td, force) {
+  const cb = td.querySelector('input');
+  if (!cb) return;
+  cb.checked = (force === undefined) ? !cb.checked : force;
+  td.classList.toggle('off', cb.checked);
+  td.childNodes[0].nodeValue = cb.checked ? 'غير متاح' : '';
+}
+
+table.addEventListener('click', e => {
+  const th = e.target.closest('th.day[data-day]');
+  if (th) {
+    const cells = th.parentElement.querySelectorAll('td');
+    const allOff = [...cells].every(td => td.querySelector('input').checked);
+    cells.forEach(td => toggle(td, !allOff));
+    return;
+  }
+  const td = e.target.closest('td[data-day]');
+  if (td) toggle(td);
+});
+
+document.getElementById('clear').onclick = () =>
+  table.querySelectorAll('td[data-day]').forEach(td => toggle(td, false));
+</script>
+{% endblock %}

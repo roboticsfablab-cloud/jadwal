@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+{% block body %}
+
+<div class="toolbar">
+  <div class="tabs">
+    <a href="{{ url_for('grid', view='sections', colored=1 if colored else 0) }}" class="{{ 'on' if view == 'sections' }}">حسب الفصول</a>
+    <a href="{{ url_for('grid', view='teachers', colored=1 if colored else 0) }}" class="{{ 'on' if view == 'teachers' }}">حسب المعلمات</a>
+  </div>
+  <div class="tabs">
+    <a href="{{ url_for('grid', view=view, layout='separate', colored=1 if colored else 0) }}" class="on">جدول لكل {{ 'فصل' if view == 'sections' else 'معلمة' }}</a>
+    <a href="{{ url_for('grid', view=view, layout='combined', colored=1 if colored else 0) }}">الجدول المجمّع</a>
+  </div>
+  <div class="tabs">
+    <a href="{{ url_for('grid', view=view, colored=1) }}" class="{{ 'on' if colored }}">ملوّن</a>
+    <a href="{{ url_for('grid', view=view, colored=0) }}" class="{{ '' if colored else 'on' }}">بلا ألوان</a>
+  </div>
+  <div class="spacer"></div>
+  <a class="btn soft" href="{{ url_for('print_view', kind=view, colored=1 if colored else 0) }}" target="_blank">معاينة للطباعة</a>
+  <a class="btn soft" href="{{ url_for('export_pdf', kind=view, sig=1, colored=1 if colored else 0) }}">PDF</a>
+  <a class="btn soft" href="{{ url_for('export_excel', kind=view, colored=1 if colored else 0) }}">Excel</a>
+  <a class="btn ghost" href="{{ url_for('generate_page') }}">إعادة التوليد</a>
+</div>
+
+<!-- ---------------------------------------------- لوحة الحالة والتعارضات -->
+<div class="card status {{ 'bad' if conflicts else ('warn' if empty else 'good') }}"
+     id="statusCard">
+  <div class="toolbar" style="margin:0">
+    <button class="statusicon {{ 'bad' if conflicts else ('warn' if empty else 'good') }}"
+            id="statusBtn" type="button"
+            title="اضغط لحل التعارضات تلقائياً">
+      {% if conflicts %}!{% elif empty %}؟{% else %}✓{% endif %}
+    </button>
+    <div style="flex:1">
+      <b id="statusTitle">
+        {% if conflicts %}
+          {{ conflicts|length }} تعارض في الجدول
+        {% elif empty %}
+          لا تعارضات — لكن توجد حصص فارغة
+        {% else %}
+          الجدول سليم: لا تعارضات ولا حصص فارغة
+        {% endif %}
+      </b>
+      <small class="hint" style="display:block;margin:0" id="statusHint">
+        {% if conflicts %}
+          اضغط العلامة الحمراء أو الزر لحل التعارضات تلقائياً — ينقل النظام الحصص
+          المتعارضة إلى خانات آمنة مع احترام حدود حصص كل يوم.
+        {% elif empty %}
+          {{ empty|length }} شعبة فيها خانات فارغة ضمن دوامها.
+        {% else %}
+          كل الحصص موضوعة ضمن حدود أيامها.
+        {% endif %}
+      </small>
+    </div>
+    {% if conflicts %}
+      <button class="btn" id="fixAll">حل كل التعارضات تلقائياً</button>
+    {% endif %}
+    <button class="btn soft" id="recheck">إعادة الفحص</button>
+  </div>
+
+  {% if conflicts %}
+    <div style="margin-top:.7rem" id="conflictList">
+      {% for c in conflicts %}
+        <div class="note err conflict-row" data-ids="{{ c.ids|join(',') }}">
+          <b>{{ c.title }}:</b> {{ c.detail }}
+          <button class="btn sm ghost fix-one" data-ids="{{ c.ids|join(',') }}">حل هذا</button>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if empty %}
+    <details class="adder" style="margin-top:.7rem">
+      <summary>الحصص الفارغة ({{ empty|length }} شعبة)</summary>
+      <table class="data">
+        <tr><th>الشعبة</th><th>عدد الخانات الفارغة</th><th>أمثلة</th></tr>
+        {% for e in empty %}
+          <tr><td>{{ e.section }}</td><td>{{ e.count }}</td>
+              <td class="hint">{{ e.cells|join('، ') }}{% if e.count > 6 %} …{% endif %}</td></tr>
+        {% endfor %}
+      </table>
+    </details>
+  {% endif %}
+</div>
+
+<div class="card">
+  <p class="hint" style="margin:0">
+    <b>اضغط خانة فارغة</b> لإضافة حصة — تظهر نافذة بالمواد المُسندة لهذا
+    {{ 'الفصل ومعلميها' if view == 'sections' else 'المعلم وفصوله' }} فقط.
+    و<b>اضغط حصة موجودة</b> لتحديدها: تُلوَّن الخانات الآمنة بالأخضر والحصص
+    القابلة للتبديل بالأزرق. النقل أو التبديل الذي ينتج عنه تعارض <b>مرفوض</b>
+    ويُعرض سببه. الخانات الرمادية المشطوبة خارج دوام ذلك اليوم.
+  </p>
+  <div id="actions" class="toolbar" style="margin-top:.6rem;display:none">
+    <span class="badge" id="selinfo"></span>
+    <button class="btn sm soft" id="pin">تثبيت / إلغاء التثبيت</button>
+    <button class="btn sm danger" id="del">حذف الحصة</button>
+    <button class="btn sm soft" id="cancel">إلغاء التحديد</button>
+  </div>
+  <div id="msg"></div>
+</div>
+
+<!-- نافذة ملء خانة فارغة -->
+<div class="modal" id="addModal">
+  <div class="box">
+    <h3>إضافة حصة</h3>
+    <div class="sub" id="addWhere"></div>
+
+    <label>المادة</label>
+    <select id="addSubject"><option value="">— اختر —</option></select>
+
+    <div style="margin-top:.6rem">
+      <label id="addSecondLabel">{{ 'المعلم' if view == 'sections' else 'الفصل' }}</label>
+      <select id="addSecond" disabled><option value="">— اختر المادة أولاً —</option></select>
+    </div>
+
+    <div class="note info" id="addNote" style="margin-top:.7rem;display:none"></div>
+    <div class="note err" id="addErr" style="margin-top:.7rem;display:none"></div>
+
+    <div class="toolbar" style="margin-top:1rem">
+      <button class="btn" id="addSave" disabled>إضافة</button>
+      <button class="btn soft" id="addCancel">إلغاء</button>
+      <span class="spacer"></span>
+      <span class="hint" style="margin:0" id="addEmpty"></span>
+    </div>
+  </div>
+</div>
+
+{% for o in owners %}
+{% set lim = owner_limits.get(o.id, limits) %}
+<div class="owner-title"><span>{{ o.title }}</span></div>
+<div class="gridwrap">
+  <table class="sched {{ '' if colored else 'nocolor' }}">
+    <tr>
+      <th class="day">اليوم</th>
+      {% for p in range(1, max_p + 1) %}
+        {% set slot = (slots | selectattr('period_number','equalto',p) | list | first) %}
+        <th>{{ slot.name if slot else 'الحصة ' ~ p }}
+          {% if slot and slot.start_time %}<br><small style="font-weight:400;color:#6b7488">{{ slot.start_time }}</small>{% endif %}
+        </th>
+      {% endfor %}
+    </tr>
+    {% for d in days %}
+    <tr>
+      <th class="day">{{ DAY_NAMES[d] }}
+        <br><small style="font-weight:400;color:#6b7488">{{ lim.get(d, max_p) }} حصص</small>
+      </th>
+      {% for p in range(1, max_p + 1) %}
+        {% if p > lim.get(d, max_p) %}
+          <td class="offday" title="{{ DAY_NAMES[d] }} فيه {{ lim.get(d, max_p) }} حصص فقط"></td>
+        {% elif p in breaks %}
+          <td class="brk"><small>فسحة</small></td>
+        {% else %}
+          {% set items = cells.get((o.id, d, p)) %}
+          <td class="{{ 'empty' if not items }}"
+              data-owner="{{ o.id }}" data-day="{{ d }}" data-period="{{ p }}">
+            {% if items %}
+              {% for r in items %}
+                <div class="cell c{{ r.color_index }}" data-id="{{ r.id }}"
+                     data-pinned="{{ r.is_pinned }}">
+                  <span class="s">{{ r.short_name or r.subject_name }}</span>
+                  <span class="t">
+                    {% if view == 'sections' %}{{ r.teacher_name }}
+                    {% else %}{{ r.section_label }}{% endif %}
+                  </span>
+                  {% if r.is_pinned %}<span class="pin">مثبّتة</span>{% endif %}
+                </div>
+              {% endfor %}
+            {% endif %}
+          </td>
+        {% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+  <div class="card">
+    <div class="note info">لا يوجد جدول بعد — ابدأ من شاشة <a href="{{ url_for('generate_page') }}">توليد الجدول</a>.</div>
+  </div>
+{% endfor %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DAYS = {{ DAY_NAMES | tojson }};
+let selected = null;
+const actions = document.getElementById('actions');
+const selinfo = document.getElementById('selinfo');
+const msg     = document.getElementById('msg');
+
+function say(text, kind) {
+  msg.innerHTML = text ? `<div class="note ${kind || 'err'}">${text}</div>` : '';
+}
+
+function post(url, payload) {
+  return fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload || {})
+  }).then(r => r.json());
+}
+
+function clearSelection() {
+  document.querySelectorAll('.sel,.target,.swaptarget').forEach(el =>
+    el.classList.remove('sel', 'target', 'swaptarget'));
+  selected = null;
+  actions.style.display = 'none';
+}
+
+/* الخانات الآمنة والحصص القابلة للتبديل يحسبها الخادم بنفس قواعد المولّد */
+async function highlight(entryId) {
+  const d = await fetch(`/grid/targets/${entryId}`).then(r => r.json());
+  const owner = document.querySelector(`.cell[data-id="${entryId}"]`).closest('td').dataset.owner;
+  (d.targets || []).forEach(([day, period]) => {
+    document.querySelectorAll(
+      `td[data-owner="${owner}"][data-day="${day}"][data-period="${period}"]`
+    ).forEach(td => { if (!td.querySelector('.cell')) td.classList.add('target'); });
+  });
+  (d.swappable || []).forEach(id => {
+    const el = document.querySelector(`.cell[data-id="${id}"]`);
+    if (el) el.closest('td').classList.add('swaptarget');
+  });
+}
+
+document.addEventListener('click', async e => {
+  if (e.target.closest('#actions') || e.target.closest('#statusCard')) return;
+
+  const cellEl = e.target.closest('.cell');
+  const td = e.target.closest('td[data-day]');
+
+  if (cellEl) {
+    const id = +cellEl.dataset.id;
+    if (selected && selected.id !== id) {
+      const r = await post('/grid/cell', {action: 'swap', id: selected.id, other: id});
+      if (!r.ok) { say('تعذّر التبديل: ' + r.reason); clearSelection(); return; }
+      location.reload();
+      return;
+    }
+    clearSelection();
+    say('');
+    cellEl.closest('td').classList.add('sel');
+    selected = {id: id, pinned: cellEl.dataset.pinned === '1'};
+    selinfo.textContent = 'حصة محدّدة' + (selected.pinned ? ' (مثبّتة)' : '');
+    actions.style.display = 'flex';
+    highlight(id);
+    return;
+  }
+
+  if (td && selected) {
+    if (td.classList.contains('offday')) {
+      say('هذه الخانة خارج دوام هذا اليوم.');
+      return;
+    }
+    const r = await post('/grid/cell', {
+      action: 'move', id: selected.id,
+      day: +td.dataset.day, period: +td.dataset.period});
+    if (!r.ok) { say('تعذّر النقل: ' + r.reason); return; }
+    location.reload();
+    return;
+  }
+
+  /* خانة فارغة بلا تحديد سابق -> نافذة الإضافة */
+  if (td && !selected && !td.querySelector('.cell') &&
+      !td.classList.contains('offday')) {
+    openAdd(td);
+    return;
+  }
+
+  if (!cellEl && !td) clearSelection();
+});
+
+/* ------------------------------------------------ نافذة ملء خانة فارغة */
+const VIEW = '{{ view }}';
+const modal      = document.getElementById('addModal');
+const selSubject = document.getElementById('addSubject');
+const selSecond  = document.getElementById('addSecond');
+const addSave    = document.getElementById('addSave');
+const addNote    = document.getElementById('addNote');
+const addErr     = document.getElementById('addErr');
+let addCtx = null, OPTIONS = [];
+
+function closeAdd() { modal.classList.remove('show'); addCtx = null; }
+document.getElementById('addCancel').onclick = closeAdd;
+modal.addEventListener('click', e => { if (e.target === modal) closeAdd(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && modal.classList.contains('show')) closeAdd();
+});
+
+async function openAdd(td) {
+  addCtx = {owner: +td.dataset.owner, day: +td.dataset.day, period: +td.dataset.period};
+  addErr.style.display = addNote.style.display = 'none';
+  addSave.disabled = true;
+  selSecond.disabled = true;
+  selSecond.innerHTML = '<option value="">— اختر المادة أولاً —</option>';
+
+  const ownerTitle = td.closest('.gridwrap').previousElementSibling.textContent.trim();
+  document.getElementById('addWhere').textContent =
+    `${ownerTitle} — ${DAYS[addCtx.day]} · الحصة ${addCtx.period}`;
+
+  const d = await fetch(
+    `/api/cell-options?view=${VIEW}&owner=${addCtx.owner}`).then(r => r.json());
+  OPTIONS = d.options || [];
+
+  if (!OPTIONS.length) {
+    selSubject.innerHTML = '<option value="">لا توجد مواد مُسندة</option>';
+    addErr.style.display = 'block';
+    addErr.textContent = VIEW === 'sections'
+      ? 'هذا الفصل بلا إسنادات. أسنِد له مواد أولاً من شاشة الإسناد.'
+      : 'هذا المعلم بلا إسنادات. أسنِد له مواد وفصولاً أولاً.';
+    modal.classList.add('show');
+    return;
+  }
+
+  /* المواد الفريدة - وما تبقّى منها */
+  const bySubject = new Map();
+  OPTIONS.forEach(o => {
+    const cur = bySubject.get(o.subject_id) || {name: o.subject_name, left: 0};
+    cur.left += o.left;
+    bySubject.set(o.subject_id, cur);
+  });
+  selSubject.innerHTML = '<option value="">— اختر —</option>' +
+    [...bySubject.entries()].map(([id, v]) =>
+      `<option value="${id}">${v.name}${v.left > 0 ? ` (بقي ${v.left})` :
+        (v.left < 0 ? ' (زائد)' : ' (مكتملة)')}</option>`).join('');
+  modal.classList.add('show');
+}
+
+selSubject.onchange = () => {
+  addErr.style.display = addNote.style.display = 'none';
+  addSave.disabled = true;
+  const sid = +selSubject.value;
+  if (!sid) { selSecond.disabled = true; return; }
+  const list = OPTIONS.filter(o => o.subject_id === sid);
+  selSecond.disabled = false;
+  selSecond.innerHTML = '<option value="">— اختر —</option>' +
+    list.map(o => {
+      const label = VIEW === 'sections' ? o.teacher_name : o.section_label;
+      const tag = o.left > 0 ? `بقي ${o.left} من ${o.total}`
+                             : (o.left === 0 ? 'اكتمل نصابها' : 'تجاوز النصاب');
+      return `<option value="${o.assignment_id}">${label} — ${tag}</option>`;
+    }).join('');
+};
+
+selSecond.onchange = () => {
+  const aid = +selSecond.value;
+  addSave.disabled = !aid;
+  const o = OPTIONS.find(x => x.assignment_id === aid);
+  if (!o) { addNote.style.display = 'none'; return; }
+  addNote.style.display = 'block';
+  addNote.textContent = o.left > 0
+    ? `وُضع ${o.placed} من ${o.total} — ستصبح ${o.placed + 1}.`
+    : `تنبيه: نصاب هذه المادة مكتمل (${o.placed} من ${o.total}). الإضافة ستتجاوزه.`;
+};
+
+addSave.onclick = async () => {
+  const o = OPTIONS.find(x => x.assignment_id === +selSecond.value);
+  if (!o || !addCtx) return;
+  addSave.disabled = true;
+  const r = await post('/grid/cell', {
+    action: 'add',
+    section_id: o.section_id, subject_id: o.subject_id,
+    teacher_id: o.teacher_id, assignment_id: o.assignment_id,
+    day: addCtx.day, period: addCtx.period
+  });
+  if (!r.ok) {
+    addErr.style.display = 'block';
+    addErr.textContent = 'تعذّرت الإضافة: ' + r.reason;
+    addSave.disabled = false;
+    return;
+  }
+  location.reload();
+};
+
+document.getElementById('cancel').onclick = () => { clearSelection(); say(''); };
+
+document.getElementById('del').onclick = async () => {
+  if (!selected || !confirm('حذف هذه الحصة من الجدول؟')) return;
+  await post('/grid/cell', {action: 'delete', id: selected.id});
+  location.reload();
+};
+
+document.getElementById('pin').onclick = async () => {
+  if (!selected) return;
+  await post('/grid/cell', {action: 'pin', id: selected.id, pinned: !selected.pinned});
+  location.reload();
+};
+
+/* -------------------------------------------------- الحل التلقائي */
+async function runFix(ids) {
+  const btn = document.getElementById('statusBtn');
+  btn.classList.add('busy');
+  const r = await post('/grid/autofix', ids ? {ids: ids} : {});
+  btn.classList.remove('busy');
+  if (!r.ok) { say('تعذّر الحل التلقائي'); return; }
+
+  let html = '';
+  if (r.moved.length) {
+    html += `<div class="note ok"><b>نُقلت ${r.moved.length} حصة:</b><ul style="margin:.4rem 0 0">` +
+      r.moved.map(m => `<li>${m.label}: ${m.from} ← ${m.to}` +
+        (m.note ? ` <span class="badge warn">${m.note}</span>` : '') + `</li>`).join('') +
+      '</ul></div>';
+  }
+  if (r.failed.length) {
+    html += `<div class="note err"><b>تعذّر حل ${r.failed.length}:</b><ul style="margin:.4rem 0 0">` +
+      r.failed.map(f => `<li>${f.label} — ${f.why}</li>`).join('') + '</ul></div>';
+  }
+  if (!r.moved.length && !r.failed.length) html = '<div class="note ok">لا توجد تعارضات.</div>';
+  msg.innerHTML = html;
+  setTimeout(() => location.reload(), r.failed.length ? 4000 : 1400);
+}
+
+const statusBtn = document.getElementById('statusBtn');
+if (statusBtn) statusBtn.onclick = () => {
+  if (!document.querySelectorAll('.conflict-row').length) { runCheck(); return; }
+  runFix(null);
+};
+const fixAll = document.getElementById('fixAll');
+if (fixAll) fixAll.onclick = () => runFix(null);
+
+document.querySelectorAll('.fix-one').forEach(b => {
+  b.onclick = ev => {
+    ev.stopPropagation();
+    runFix(b.dataset.ids.split(',').map(Number));
+  };
+});
+
+async function runCheck() {
+  const d = await fetch('/grid/validate').then(r => r.json());
+  const n = d.conflicts.length, e = d.empty.length;
+  say(n ? `يوجد ${n} تعارض.` : (e ? `لا تعارضات، لكن ${e} شعبة فيها خانات فارغة.`
+                                  : 'الجدول سليم: لا تعارضات ولا حصص فارغة.'),
+      n ? 'err' : (e ? 'warn' : 'ok'));
+}
+document.getElementById('recheck').onclick = runCheck;
+</script>
+{% endblock %}

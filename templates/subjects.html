@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>المواد الدراسية</h1>
+<p class="hint">
+  اضغط «إضافة صف جديد» ثم املأ الخانات مباشرة. <b>عدد الحصص</b> هو نصاب المادة
+  المعتاد للفصل الواحد — يُقترح تلقائياً عند الإسناد فلا تكتبه كل مرة.
+  و<b>المعلمون</b> هم من يُدرّسون هذه المادة، ويظهرون وحدهم في قائمة الإسناد.
+  يجوز إضافة أكثر من معلم للمادة الواحدة.
+</p>
+
+<div id="toast" class="toast"></div>
+
+<div class="card">
+  <div class="toolbar">
+    <h2 style="margin:0">القائمة ({{ subjects|length }})</h2>
+    <div class="spacer"></div>
+    <button class="btn" id="saveTop">حفظ الكل</button>
+  </div>
+
+  <div class="gridwrap" style="overflow:visible">
+  <table class="data editable" id="subjTable">
+    <thead>
+      <tr>
+        <th style="width:1%">#</th>
+        <th style="min-width:160px">المادة</th>
+        <th style="width:120px">الاختصار</th>
+        <th style="width:110px">عدد الحصص</th>
+        <th style="width:120px">اللون</th>
+        <th style="min-width:230px">المعلمون</th>
+        <th style="width:1%"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in subjects %}
+      {% set mine = links.get(s.id, []) %}
+      <tr data-id="{{ s.id }}" {% if not s.name %}id="new" class="fresh"{% endif %}>
+        <td class="idx">{{ loop.index }}</td>
+        <td><input type="text" class="f-name" value="{{ s.name }}" placeholder="اسم المادة"></td>
+        <td><input type="text" class="f-short" value="{{ s.short_name }}" placeholder="مختصر"></td>
+        <td><input type="number" class="f-periods" min="0" max="40"
+                   value="{{ s.default_periods or '' }}" placeholder="0" style="width:85px"></td>
+        <td>
+          <select class="f-color" style="width:100px">
+            {% for c in range(12) %}
+              <option value="{{ c }}" {% if c == s.color_index %}selected{% endif %}>لون {{ c + 1 }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <div class="chips" data-for="{{ s.id }}">
+            {% for t in teachers if t.id in mine %}
+              <span class="chip" data-tid="{{ t.id }}">{{ t.name }}<a href="#" class="x">×</a></span>
+            {% endfor %}
+            <button type="button" class="btn sm ghost addteach">+ معلم</button>
+          </div>
+        </td>
+        <td style="white-space:nowrap">
+          <span class="cell c{{ s.color_index }} swatch">{{ s.short_name or s.name or '—' }}</span>
+          {% if used.get(s.id) %}<span class="badge">{{ used[s.id] }} إسناد</span>{% endif %}
+          <form method="post" action="{{ url_for('delete_subject', rid=s.id) }}" class="inline">
+            <button class="btn sm danger"
+                    onclick="return confirm('حذف المادة وكل إسناداتها؟')">حذف</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="hint">لا توجد مواد بعد — أضف صفاً للبدء</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="toolbar" style="margin-top:.8rem">
+    <button class="btn" id="saveBottom">حفظ الكل</button>
+    <span class="spacer"></span>
+    <span class="hint" style="margin:0">أضف</span>
+    <input type="number" id="howmany" min="1" max="50" value="1" style="width:70px" form="addrow">
+    <span class="hint" style="margin:0">صفاً</span>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('add_subject_row') }}" id="addrow">
+  <input type="hidden" name="count" id="countField" value="1">
+  <button class="btn ghost">+ إضافة صف جديد</button>
+</form>
+
+<!-- قائمة المعلمين للاختيار -->
+<datalist id="teacherList">
+  {% for t in teachers %}<option value="{{ t.name }}" data-id="{{ t.id }}">{% endfor %}
+</datalist>
+<script id="teacherData" type="application/json">
+  {{ teachers | map(attribute='id') | list | tojson }}
+</script>
+<script id="teacherNames" type="application/json">
+  {{ teachers | map(attribute='name') | list | tojson }}
+</script>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TIDS   = JSON.parse(document.getElementById('teacherData').textContent);
+const TNAMES = JSON.parse(document.getElementById('teacherNames').textContent);
+
+function toast(text, bad) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+
+/* ---- شرائح المعلمين لكل مادة */
+function chipHtml(tid, name) {
+  return `<span class="chip" data-tid="${tid}">${name}<a href="#" class="x">×</a></span>`;
+}
+
+document.addEventListener('click', e => {
+  const x = e.target.closest('.chips .x');
+  if (x) { e.preventDefault(); x.closest('.chip').remove(); return; }
+
+  const add = e.target.closest('.addteach');
+  if (!add) return;
+  e.preventDefault();
+  const box = add.closest('.chips');
+  if (box.querySelector('.picker')) return;
+
+  const have = new Set([...box.querySelectorAll('.chip')].map(c => +c.dataset.tid));
+  const sel = document.createElement('select');
+  sel.className = 'picker';
+  sel.innerHTML = '<option value="">— اختر معلماً —</option>' +
+    TIDS.map((id, k) => have.has(id) ? '' :
+      `<option value="${id}">${TNAMES[k]}</option>`).join('');
+  box.insertBefore(sel, add);
+  sel.focus();
+  sel.onchange = () => {
+    if (sel.value) {
+      const k = TIDS.indexOf(+sel.value);
+      box.insertBefore(
+        document.createRange().createContextualFragment(chipHtml(sel.value, TNAMES[k])),
+        add);
+    }
+    sel.remove();
+  };
+  sel.onblur = () => setTimeout(() => sel.remove(), 150);
+});
+
+/* ---- حفظ الكل بلا إعادة تحميل ولا قفز لأعلى الصفحة */
+async function saveAll() {
+  const rows = [...document.querySelectorAll('#subjTable tbody tr[data-id]')].map(tr => ({
+    id: +tr.dataset.id,
+    name: tr.querySelector('.f-name').value,
+    short_name: tr.querySelector('.f-short').value,
+    default_periods: tr.querySelector('.f-periods').value,
+    color_index: tr.querySelector('.f-color').value,
+    teachers: [...tr.querySelectorAll('.chip')].map(c => +c.dataset.tid)
+  }));
+  const r = await fetch('{{ url_for("save_subjects") }}', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({rows})
+  }).then(x => x.json());
+  if (r.ok) {
+    toast(r.message);
+    // حدّث المعاينة اللونية دون إعادة تحميل
+    document.querySelectorAll('#subjTable tbody tr[data-id]').forEach(tr => {
+      const sw = tr.querySelector('.swatch');
+      const c = tr.querySelector('.f-color').value;
+      sw.className = 'cell c' + c + ' swatch';
+      sw.textContent = tr.querySelector('.f-short').value ||
+                       tr.querySelector('.f-name').value || '—';
+    });
+  } else toast('تعذّر الحفظ', true);
+}
+document.getElementById('saveTop').onclick = saveAll;
+document.getElementById('saveBottom').onclick = saveAll;
+
+/* ---- عدد الصفوف المضافة */
+const how = document.getElementById('howmany');
+const fld = document.getElementById('countField');
+const sync = () => fld.value = how.value || 1;
+how.addEventListener('input', sync);
+document.getElementById('addrow').addEventListener('submit', sync);
+
+/* Enter ينقل للخانة التالية */
+const inputs = [...document.querySelectorAll('#subjTable input')];
+inputs.forEach((el, k) => el.addEventListener('keydown', ev => {
+  if (ev.key !== 'Enter') return;
+  ev.preventDefault();
+  if (inputs[k + 1]) { inputs[k + 1].focus(); inputs[k + 1].select(); }
+}));
+
+const fresh = document.querySelector('tr.fresh .f-name');
+if (fresh) fresh.focus();
+</script>
+{% endblock %}

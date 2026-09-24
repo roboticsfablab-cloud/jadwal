@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>الإسناد</h1>
+<p class="hint">اختر ما تريد العمل عليه — كل أيقونة تفتح شاشتها المستقلة.</p>
+
+{% include "assign_nav.html" %}
+
+<div class="grid2">
+  <div class="card">
+    <h2>الحالة</h2>
+    <table class="data">
+      <tr><td>عدد الإسنادات</td><td><b>{{ rows|length }}</b></td></tr>
+      <tr><td>مجموع الحصص المُسندة</td>
+          <td><b>{{ rows | sum(attribute='periods_per_week') }}</b></td></tr>
+      <tr><td>الفصول</td><td><b>{{ per_section|length }}</b></td></tr>
+      <tr><td>فصول غير مطابقة للمطلوب</td>
+          <td>{% if problems %}<span class="badge warn">{{ problems }}</span>
+              {% else %}<span class="badge ok">لا شيء</span>{% endif %}</td></tr>
+      <tr><td>المعامل</td><td>{{ rooms }}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>كيف تعمل هذه الشاشة</h2>
+    <p class="hint">
+      ابدأ من <b>المعلم</b>: اختر المعلمة، فتظهر موادها فقط (كما حُدّدت في شاشة
+      المواد)، ثم اختر المادة فتظهر كل الفصول — علّم ما تُدرّسه وحدّد عدد حصص
+      كل فصل على حدة. عدد الحصص يُقترح من نصاب المادة، ولا يُسمح بتجاوزه.
+    </p>
+    <a class="btn" href="{{ url_for('assign_by_teacher') }}">ابدأ الإسناد</a>
+  </div>
+</div>
+
+{% endblock %}

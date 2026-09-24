@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>المراحل والصفوف والشعب</h1>
+<p class="hint">
+  <b>كل صف يُحسب فصلاً مستقلاً في الجدول</b> — لا حاجة لإضافة شعبة له.
+  وإضافة الشعب اختيارية: الصف الذي تقسّمه إلى شعب تحلّ شعبه محلّه في العدد.
+  إجمالي الفصول الآن: <span class="badge ok">{{ total_classes }}</span>
+</p>
+
+<div class="grid2">
+
+  <div class="card">
+    <h2>المراحل <span class="badge">{{ stages|length }}</span></h2>
+    <form method="post" action="{{ url_for('add_stage') }}">
+      <label>أسماء المراحل (سطر لكل مرحلة)</label>
+      <textarea name="names" placeholder="ابتدائي&#10;متوسط&#10;ثانوي"></textarea>
+      <button class="btn sm" style="margin-top:.5rem">إضافة</button>
+    </form>
+    <table class="data" style="margin-top:.8rem">
+      {% for s in stages %}
+      <tr>
+        <td>{{ s.name }}
+          <span class="badge">{{ grades | selectattr('stage_id','equalto',s.id) | list | length }} صف</span>
+        </td>
+        <td style="width:1%">
+          <form method="post" action="{{ url_for('delete_structure', kind='stages', rid=s.id) }}" class="inline">
+            <button class="btn sm danger" onclick="return confirm('سيُحذف معها كل صفوفها وشعبها. متابعة؟')">حذف</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}<tr><td class="hint">لا توجد مراحل بعد</td></tr>{% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>الصفوف <span class="badge">{{ grades|length }}</span></h2>
+    <form method="post" action="{{ url_for('add_grade') }}" id="gradeForm">
+      <label>المرحلة</label>
+      <select name="stage_id" id="stagePick" required>
+        <option value="">— اختر —</option>
+        {% for s in stages %}
+          <option value="{{ s.id }}" data-name="{{ s.name }}">{{ s.name }}</option>
+        {% endfor %}
+      </select>
+      <label style="margin-top:.5rem">أسماء الصفوف (سطر لكل صف)</label>
+      <textarea name="names" id="gradeNames" placeholder="أول&#10;ثاني&#10;ثالث"></textarea>
+      <div class="note info" id="preview" style="display:none;margin-top:.5rem"></div>
+      <p class="hint" style="margin:.4rem 0 0">
+        يُضاف اسم المرحلة تلقائياً لاسم الصف — «أول» في مرحلة «ثانوي» تصير
+        «أول ثانوي»، فلا تختلط بـ«أول متوسط». وإن كتبت الاسم كاملاً يُترك كما هو.
+      </p>
+      <button class="btn sm" style="margin-top:.5rem">إضافة</button>
+    </form>
+  </div>
+
+</div>
+
+<div class="card">
+  <h2>الفصول ({{ total_classes }})</h2>
+  <p class="hint">الصف بلا شعب = فصل واحد. الصف المقسّم = فصل لكل شعبة.</p>
+
+  <form method="post" action="{{ url_for('add_section') }}">
+    <div class="row">
+      <div><label>أضف شعباً للصف (اختياري)</label>
+        <select name="grade_id" required>
+          <option value="">— اختر الصف —</option>
+          {% for g in grades %}
+            <option value="{{ g.id }}">{{ g.name }}</option>
+          {% endfor %}
+        </select></div>
+      <div style="max-width:160px"><label>عدد الطلاب</label>
+        <input type="number" name="student_count" min="0" value="0"></div>
+      <div><label>أسماء الشعب (سطر لكل شعبة)</label>
+        <textarea name="names" style="min-height:62px" placeholder="أ&#10;ب"></textarea></div>
+      <div style="max-width:120px"><button class="btn">إضافة شعب</button></div>
+    </div>
+  </form>
+
+  <table class="data" style="margin-top:.9rem">
+    <tr><th>المرحلة</th><th>الصف</th><th>الفصول</th><th></th></tr>
+    {% for g in grades %}
+      {% set secs = by_grade.get(g.id, []) %}
+      <tr>
+        <td class="hint">{{ g.stage_name }}</td>
+        <td><b>{{ g.name }}</b></td>
+        <td>
+          {% for s in secs %}
+            {% if s.is_default %}
+              <span class="badge">الصف كاملاً (بلا شعب)</span>
+            {% else %}
+              <span class="badge ok">{{ s.name }}{% if s.student_count %} · {{ s.student_count }} طالب{% endif %}
+                <a href="#" class="delsec" data-id="{{ s.id }}" title="حذف الشعبة">×</a>
+              </span>
+            {% endif %}
+          {% endfor %}
+        </td>
+        <td style="width:1%">
+          <form method="post" action="{{ url_for('delete_structure', kind='grades', rid=g.id) }}" class="inline">
+            <button class="btn sm danger" onclick="return confirm('حذف الصف وكل شعبه وإسناداته؟')">حذف الصف</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="hint">لا توجد صفوف بعد</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% for s in sections %}{% if not s.is_default %}
+<form method="post" action="{{ url_for('delete_structure', kind='sections', rid=s.id) }}"
+      id="delsec{{ s.id }}" class="inline"></form>
+{% endif %}{% endfor %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* معاينة حيّة لاسم الصف بعد إضافة اسم المرحلة */
+const stagePick = document.getElementById('stagePick');
+const gradeNames = document.getElementById('gradeNames');
+const preview = document.getElementById('preview');
+
+function finalName(raw, stage) {
+  raw = raw.trim().replace(/\s+/g, ' ');
+  stage = (stage || '').trim();
+  if (!raw || !stage) return raw;
+  for (const w of stage.split(/\s+/)) {
+    if (w.length > 2 && raw.indexOf(w) !== -1) return raw;
+  }
+  return raw + ' ' + stage;
+}
+
+function renderPreview() {
+  const opt = stagePick.selectedOptions[0];
+  const stage = opt ? (opt.dataset.name || '') : '';
+  const lines = gradeNames.value.split('\n').map(x => x.trim()).filter(Boolean);
+  if (!lines.length || !stage) { preview.style.display = 'none'; return; }
+  preview.style.display = 'block';
+  preview.innerHTML = 'ستُضاف باسم: ' +
+    lines.map(l => '<b>' + finalName(l, stage) + '</b>').join('، ');
+}
+if (stagePick && gradeNames) {
+  stagePick.addEventListener('change', renderPreview);
+  gradeNames.addEventListener('input', renderPreview);
+}
+
+/* حذف شعبة */
+document.querySelectorAll('.delsec').forEach(a => {
+  a.onclick = e => {
+    e.preventDefault();
+    if (confirm('حذف هذه الشعبة وكل إسناداتها؟'))
+      document.getElementById('delsec' + a.dataset.id).submit();
+  };
+});
+</script>
+{% endblock %}

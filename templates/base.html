@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}جدول المدرسة — {{ school_name }}{% endblock %}</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="{{ url_for('home') }}">
+    <span class="logo">
+      <img src="{{ url_for('static', filename='img/mark.png') }}" alt="شعار المدرسة">
+    </span>
+    <span>
+      <strong>{{ school_name }}</strong>
+      <small>نظام إدارة الجدول المدرسي</small>
+    </span>
+  </a>
+
+  <div style="display:flex;align-items:center;gap:.6rem">
+    <form class="ver" method="post" action="{{ url_for('activate_version', vid=0) }}"
+          onsubmit="this.action='/versions/'+this.vid.value+'/activate'">
+      <label style="margin:0">النسخة</label>
+      <select name="vid" onchange="this.form.submit()">
+        {% for v in all_versions %}
+          <option value="{{ v.id }}" {% if active_version and v.id == active_version.id %}selected{% endif %}>
+            {{ v.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if auth_on %}
+      <a class="btn soft sm" href="{{ url_for('logout') }}" title="تسجيل الخروج">خروج</a>
+    {% endif %}
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="side">
+    {% set c = nav_counts %}
+    {% set items = [
+      ('home',            'لوحة البداية',            '&#127968;', none),
+      ('settings_page',   'الإعدادات والحصص',        '&#9881;',   none),
+      ('structure',       'المراحل والصفوف',         '&#127979;', c.sections),
+      ('subjects_page',   'المواد',                  '&#128218;', c.subjects),
+      ('teachers_page',   'المعلمات',                '&#128100;', c.teachers),
+      ('assignments_page','الإسناد',                 '&#128203;', c.assignments)
+    ] %}
+    {% for ep, label, icon, n in items %}
+      <a href="{{ url_for(ep) }}" class="{{ 'on' if request.endpoint == ep }}">
+        <span><span class="nav-ic">{{ icon|safe }}</span> {{ label }}</span>
+        {% if n is not none %}<b>{{ n }}</b>{% endif %}
+      </a>
+    {% endfor %}
+    <hr>
+    {% set more = [
+      ('generate_page', 'توليد الجدول',        '&#9889;',   none),
+      ('grid',          'الجدول العام',        '&#128197;', c.schedule),
+      ('history_page',  'السجل والتراجع',      '&#8634;',   none),
+      ('doctor_page',   'فحص سلامة النظام',    '&#129658;', none)
+    ] %}
+    {% for ep, label, icon, n in more %}
+      <a href="{{ url_for(ep) }}" class="{{ 'on' if request.endpoint == ep }}">
+        <span><span class="nav-ic">{{ icon|safe }}</span> {{ label }}</span>
+        {% if n is not none %}<b>{{ n }}</b>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+
+  <main class="content">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+        <div class="flashes">
+        {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block body %}{% endblock %}
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

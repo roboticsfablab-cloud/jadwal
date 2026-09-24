@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "app.py": {
+      "maxDuration": 300,
+      "memory": 2048,
+      "excludeFiles": "{school.db,*.db,*.db-wal,*.db-shm,test_*.py,seed_demo.py,import_pdf.py,make_logo.py,check_fonts.py,reset_data.py,testkit.py,push_to_turso.py,__pycache__/**,*.pyc,نسخة*}"
+    }
+  }
+}

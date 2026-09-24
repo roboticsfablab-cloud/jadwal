@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block body %}
+
+{% set other = 'teachers' if view == 'sections' else 'sections' %}
+<div class="toolbar">
+  <div class="tabs">
+    <a href="{{ url_for('grid', view='sections', layout='combined', colored=1 if colored else 0) }}"
+       class="{{ 'on' if view == 'sections' }}">حسب الفصول</a>
+    <a href="{{ url_for('grid', view='teachers', layout='combined', colored=1 if colored else 0) }}"
+       class="{{ 'on' if view == 'teachers' }}">حسب المعلمات</a>
+  </div>
+  <div class="tabs">
+    <a href="{{ url_for('grid', view=view, layout='separate', colored=1 if colored else 0) }}">جدول لكل {{ 'فصل' if view == 'sections' else 'معلمة' }}</a>
+    <a href="{{ url_for('grid', view=view, layout='combined', colored=1 if colored else 0) }}" class="on">الجدول المجمّع</a>
+  </div>
+  <div class="tabs">
+    <a href="{{ url_for('grid', view=view, layout='combined', colored=1) }}"
+       class="{{ 'on' if colored }}">ملوّن</a>
+    <a href="{{ url_for('grid', view=view, layout='combined', colored=0) }}"
+       class="{{ '' if colored else 'on' }}">بلا ألوان</a>
+  </div>
+  <div class="spacer"></div>
+  <a class="btn soft" href="{{ url_for('print_view', kind=view, layout='combined', colored=1 if colored else 0) }}" target="_blank">معاينة للطباعة</a>
+  <a class="btn soft" href="{{ url_for('export_pdf', kind=view, layout='combined', sig=1, colored=1 if colored else 0) }}">PDF</a>
+  <a class="btn soft" href="{{ url_for('export_excel', kind=view, layout='combined', colored=1 if colored else 0) }}">Excel</a>
+</div>
+
+<div class="card status {{ 'bad' if conflicts else ('warn' if empty else 'good') }}">
+  <div class="toolbar" style="margin:0">
+    <span class="statusicon {{ 'bad' if conflicts else ('warn' if empty else 'good') }}"
+          style="cursor:default">{% if conflicts %}!{% elif empty %}؟{% else %}✓{% endif %}</span>
+    <div style="flex:1">
+      <b>
+        {% if conflicts %}{{ conflicts|length }} تعارض
+        {% elif empty %}لا تعارضات — {{ empty|length }} فصل فيه خانات فارغة
+        {% else %}الجدول سليم{% endif %}
+      </b>
+      <small class="hint" style="display:block;margin:0">
+        الجدول المجمّع للعرض والطباعة. للتعديل استعمل «جدول لكل
+        {{ 'فصل' if view == 'sections' else 'معلمة' }}».
+      </small>
+    </div>
+    <label class="opt" style="flex:0 0 auto;min-width:0;padding:.3rem .6rem">
+      <input type="checkbox" id="compact"> <b>عرض مضغوط</b>
+    </label>
+  </div>
+</div>
+
+<div class="gridwrap">
+  <table class="sched master {{ '' if colored else 'nocolor' }}" id="master">
+    <thead>
+      <tr>
+        <th class="day sticky-col" rowspan="2">{{ 'الفصل' if view == 'sections' else 'المعلمة' }}</th>
+        <th class="day total sticky-total" rowspan="2">المجموع</th>
+        {% for d in days %}
+          <th colspan="{{ per_day[d] }}" class="dayhead dayend">{{ DAY_NAMES[d] }}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        {% for d in days %}
+          {% for p in range(1, per_day[d] + 1) %}
+            <th class="ph {{ 'brk' if p in breaks }} {{ 'dayend' if loop.last }}">{{ p }}</th>
+          {% endfor %}
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in owners %}
+        <tr>
+          <th class="day sticky-col">{{ o.title }}</th>
+          <th class="day total sticky-total">{{ totals.get(o.id, 0) }}</th>
+          {% for d in days %}
+            {% for p in range(1, per_day[d] + 1) %}
+              {% set edge = 'dayend' if loop.last else '' %}
+              {% if p > owner_limits[o.id].get(d, max_p) %}
+                <td class="offday {{ edge }}"></td>
+              {% elif p in breaks %}
+                <td class="brk {{ edge }}"></td>
+              {% else %}
+                {% set items = cells.get((o.id, d, p)) %}
+                {% if items %}
+                  <td class="c{{ items[0].color_index }} {{ edge }}"
+                      title="{{ items[0].subject_name }} — {% if view == 'sections' %}{{ items[0].teacher_name }}{% else %}{{ items[0].section_label }}{% endif %} — {{ DAY_NAMES[d] }} ح{{ p }}">
+                    <span class="s">{{ items[0].short_name or items[0].subject_name }}</span>
+                    <span class="t">{% if view == 'sections' %}{{ items[0].teacher_name }}{% else %}{{ items[0].section_label }}{% endif %}</span>
+                  </td>
+                {% else %}
+                  <td class="empty {{ edge }}"></td>
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if not owners %}
+  <div class="card"><div class="note info">لا يوجد جدول بعد.</div></div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const box = document.getElementById('compact');
+const tbl = document.getElementById('master');
+const KEY = 'jadwal_compact';
+function apply() { tbl.classList.toggle('compact', box.checked); }
+try { box.checked = localStorage.getItem(KEY) === '1'; } catch (e) {}
+apply();
+box.onchange = () => {
+  apply();
+  try { localStorage.setItem(KEY, box.checked ? '1' : '0'); } catch (e) {}
+};
+</script>
+{% endblock %}

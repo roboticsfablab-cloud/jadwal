@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>المطلوب مقابل الإسناد</h1>
+{% include "assign_nav.html" %}
+
+<div id="toast" class="toast"></div>
+
+<div class="card">
+  <p class="hint">
+    <b>المطلوب</b> تكتبه بنفسك لكل فصل — اتركه فارغاً ليُحسب تلقائياً من الخانات
+    المتاحة (بعد خصم الفسحات وحدود حصص كل يوم).
+    <b>المُسند</b> مجموع نصاب المواد المسندة، و<b>المُدرج</b> ما وُضع فعلاً في
+    الجدول العام ويتحدّث تلقائياً بعد كل توليد أو تعديل.
+  </p>
+
+  <div class="toolbar">
+    <div class="spacer"></div>
+    <button class="btn" id="saveTop">حفظ المطلوب</button>
+  </div>
+
+  <table class="data editable" id="tbl">
+    <thead>
+      <tr>
+        <th>الفصل</th>
+        <th style="width:110px">المطلوب</th>
+        <th style="width:90px">المُسند</th>
+        <th style="width:90px">المُدرج</th>
+        <th style="width:110px">الخانات المتاحة</th>
+        <th>الحالة</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in sections %}
+      {% set b = per_section.get(s.id) %}
+      {% if b %}
+      <tr data-id="{{ s.id }}">
+        <td>{{ s.section_label }}</td>
+        <td><input type="number" class="f-req" min="0" max="80"
+                   value="{{ '' if b.auto else b.required }}"
+                   placeholder="{{ b.slots }} (تلقائي)" style="width:95px"></td>
+        <td>{{ b.assigned }}</td>
+        <td>{{ b.scheduled }}</td>
+        <td>{{ b.slots }}</td>
+        <td>
+          {% if b.assigned > b.required %}
+            <span class="badge err">زائد {{ b.assigned - b.required }}</span>
+          {% elif b.assigned < b.required %}
+            <span class="badge warn">ناقص {{ b.required - b.assigned }}</span>
+          {% elif b.scheduled and b.scheduled < b.assigned %}
+            <span class="badge warn">لم يُدرج {{ b.assigned - b.scheduled }}</span>
+          {% else %}
+            <span class="badge ok">مطابق</span>
+          {% endif %}
+          {% if b.required > b.slots %}
+            <span class="badge err">المطلوب أكبر من الخانات</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="toolbar" style="margin-top:.8rem">
+    <button class="btn" id="saveBottom">حفظ المطلوب</button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toast(text, bad) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+async function saveAll() {
+  const rows = [...document.querySelectorAll('#tbl tbody tr[data-id]')].map(tr => ({
+    id: +tr.dataset.id, required: tr.querySelector('.f-req').value
+  }));
+  const r = await fetch('{{ url_for("save_required") }}', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({rows})
+  }).then(x => x.json());
+  toast(r.message || 'تم الحفظ', !r.ok);
+}
+document.getElementById('saveTop').onclick = saveAll;
+document.getElementById('saveBottom').onclick = saveAll;
+</script>
+{% endblock %}

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>الجدول العام المجمّع</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<style>
+  body{background:#fff}
+  .sheet{padding:1rem}
+  .pl{height:46px;display:block;margin:0 auto .25rem}
+  .head{text-align:center;margin-bottom:.7rem}
+  .head h1{font-size:1.2rem;margin:0}
+  .head p{margin:.1rem 0;color:#555;font-size:.85rem}
+  .sig{display:flex;gap:1rem;margin-top:.9rem;font-size:.8rem}
+  .sig div{flex:1;border:1px solid var(--line);border-radius:8px;padding:.45rem .6rem;min-height:42px}
+  @media print{.sheet{padding:0}}
+</style>
+</head>
+<body>
+
+<div class="toolbar noprint" style="padding:.8rem 1rem;background:#f4f5f9">
+  <button class="btn" onclick="window.print()">طباعة / حفظ PDF</button>
+  <a class="btn soft" href="{{ url_for('print_view', kind=kind, layout='combined', sig=0 if signature else 1, colored=1 if colored else 0) }}">
+    {{ 'بدون خانة توقيع' if signature else 'مع خانة توقيع' }}</a>
+  <a class="btn soft" href="{{ url_for('print_view', kind=kind, layout='combined', sig=1 if signature else 0, colored=0 if colored else 1) }}">
+    {{ 'بلا ألوان' if colored else 'ملوّن' }}</a>
+  <a class="btn soft" href="{{ url_for('print_view', kind='teachers' if kind == 'sections' else 'sections', layout='combined', sig=1 if signature else 0, colored=1 if colored else 0) }}">
+    {{ 'جدول المعلمات' if kind == 'sections' else 'جدول الفصول' }}</a>
+  <a class="btn soft" href="{{ url_for('print_view', kind=kind, colored=1 if colored else 0) }}">جدول لكل {{ 'فصل' if kind == 'sections' else 'معلمة' }}</a>
+  <a class="btn soft" href="{{ url_for('grid', view=kind, layout='combined', colored=1 if colored else 0) }}">رجوع</a>
+  <span class="hint" style="margin:0">اختر «أفقي» و«A3» في إعدادات الطباعة لأفضل نتيجة.</span>
+</div>
+
+<div class="sheet">
+  <div class="head">
+    <img class="pl" src="{{ url_for('static', filename='img/mark.png') }}" alt="">
+    <h1>{{ st.school_name or 'جدول المدرسة' }}</h1>
+    <p>{{ st.school_stage_label }}</p>
+    <p><b>الجدول العام المجمّع — {{ 'حسب الفصول' if kind == 'sections' else 'حسب المعلمات' }}</b></p>
+  </div>
+
+  <table class="sched master {{ '' if colored else 'nocolor' }}">
+    <thead>
+      <tr>
+        <th class="day" rowspan="2">{{ 'الفصل' if kind == 'sections' else 'المعلمة' }}</th>
+        <th class="day total" rowspan="2">المجموع</th>
+        {% for d in days %}
+          <th colspan="{{ per_day[d] }}" class="dayhead dayend">{{ DAY_NAMES[d] }}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        {% for d in days %}
+          {% for p in range(1, per_day[d] + 1) %}
+            <th class="ph {{ 'brk' if p in breaks }} {{ 'dayend' if loop.last }}">{{ p }}</th>
+          {% endfor %}
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in owners %}
+        <tr>
+          <th class="day">{{ o.title }}</th>
+          <th class="day total">{{ totals.get(o.id, 0) }}</th>
+          {% for d in days %}
+            {% for p in range(1, per_day[d] + 1) %}
+              {% set edge = 'dayend' if loop.last else '' %}
+              {% if p > owner_limits[o.id].get(d, max_p) %}
+                <td class="offday {{ edge }}"></td>
+              {% elif p in breaks %}
+                <td class="brk {{ edge }}"></td>
+              {% else %}
+                {% set items = cells.get((o.id, d, p)) %}
+                {% if items %}
+                  <td class="c{{ items[0].color_index }} {{ edge }}">
+                    <span class="s">{{ items[0].short_name or items[0].subject_name }}</span>
+                    <span class="t">{% if kind == 'sections' %}{{ items[0].teacher_name }}{% else %}{{ items[0].section_label }}{% endif %}</span>
+                  </td>
+                {% else %}<td class="{{ edge }}"></td>{% endif %}
+              {% endif %}
+            {% endfor %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if signature %}
+  <div class="sig">
+    <div>رئيسة الإشراف التعليمي: {{ st.manager_name or '' }}</div>
+    <div>التوقيع:</div>
+    <div>التاريخ: &nbsp; &nbsp; / &nbsp; &nbsp; / 14&nbsp;&nbsp;هـ</div>
+  </div>
+  {% endif %}
+</div>
+
+</body>
+</html>

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>المعلمون</h1>
+<p class="hint">
+  أضف صفاً جديداً ثم املأ خاناته مباشرة. كل الخانات قابلة للتعديل،
+  واضغط «حفظ الكل» مرة واحدة في النهاية. الصف الذي يُترك بلا اسم يُحذف عند الحفظ.
+</p>
+
+<form method="post" action="{{ url_for('save_teachers') }}">
+<div class="card">
+  <div class="toolbar">
+    <h2 style="margin:0">القائمة ({{ teachers|length }})</h2>
+    <div class="spacer"></div>
+    <button class="btn" name="_save" value="1">حفظ الكل</button>
+  </div>
+
+  <div class="gridwrap" style="overflow:visible">
+  <table class="data editable">
+    <thead>
+    <tr>
+      <th style="width:1%">#</th>
+      <th>الاسم</th><th>التخصص</th><th>الجوال</th>
+      <th>النصاب/أسبوع</th><th>أقصى/يوم</th><th>إداري</th>
+      <th>تخفيض إداري</th><th>ملاحظات</th><th>المُسند</th><th></th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for t in teachers %}
+      {% set used = load.get(t.id, 0) %}
+      <tr {% if not t.name %}id="new" class="fresh"{% endif %}>
+        <td class="idx">{{ loop.index }}</td>
+        <td><input type="text" name="name_{{ t.id }}" value="{{ t.name }}"
+                   placeholder="اسم المعلم" style="min-width:150px"></td>
+        <td><input type="text" name="specialization_{{ t.id }}"
+                   value="{{ t.specialization }}" placeholder="التخصص" style="min-width:110px"></td>
+        <td><input type="text" name="phone_{{ t.id }}" value="{{ t.phone }}"
+                   placeholder="05…" style="min-width:110px"></td>
+        <td><input type="number" name="max_periods_per_week_{{ t.id }}" min="0" max="40"
+                   value="{{ t.max_periods_per_week }}" style="width:80px"></td>
+        <td><input type="number" name="max_periods_per_day_{{ t.id }}" min="1" max="12"
+                   value="{{ t.max_periods_per_day }}" style="width:70px"></td>
+        <td style="text-align:center">
+          <input type="checkbox" name="is_administrative_{{ t.id }}"
+                 {% if t.is_administrative %}checked{% endif %}
+                 style="width:17px;height:17px">
+        </td>
+        <td><input type="number" name="admin_reduction_periods_{{ t.id }}" min="0" max="20"
+                   value="{{ t.admin_reduction_periods }}" style="width:70px"></td>
+        <td><input type="text" name="notes_{{ t.id }}" value="{{ t.notes }}"
+                   placeholder="—" style="min-width:120px"></td>
+        <td>
+          {% if used > t.max_periods_per_week %}
+            <span class="badge err">{{ used }} / {{ t.max_periods_per_week }}</span>
+          {% elif used == t.max_periods_per_week and used > 0 %}
+            <span class="badge ok">{{ used }} / {{ t.max_periods_per_week }}</span>
+          {% else %}
+            <span class="badge">{{ used }} / {{ t.max_periods_per_week }}</span>
+          {% endif %}
+        </td>
+        <td style="width:1%;white-space:nowrap">
+          <input type="hidden" name="row_id" value="{{ t.id }}">
+          <a class="btn sm ghost" href="{{ url_for('teacher_availability', rid=t.id) }}">عدم الإتاحة</a>
+          <button class="btn sm danger" formaction="{{ url_for('delete_teacher', rid=t.id) }}"
+                  formnovalidate onclick="return confirm('حذف المعلم وكل إسناداته؟')">حذف</button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="11" class="hint">لا يوجد معلمون بعد — أضف صفاً للبدء</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="toolbar" style="margin-top:.8rem">
+    <button class="btn">حفظ الكل</button>
+    <span class="spacer"></span>
+    <span class="hint" style="margin:0">أضف</span>
+    <input type="number" id="howmany" min="1" max="50" value="1"
+           style="width:70px" form="addrow">
+    <span class="hint" style="margin:0">صفاً</span>
+  </div>
+</div>
+</form>
+
+<form method="post" action="{{ url_for('add_teacher_row') }}" id="addrow">
+  <input type="hidden" name="count" id="countField" value="1">
+  <button class="btn ghost">+ إضافة صف جديد</button>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// اربط عدد الصفوف المطلوب بزر الإضافة
+const how = document.getElementById('howmany');
+const fld = document.getElementById('countField');
+if (how && fld) {
+  const sync = () => fld.value = how.value || 1;
+  how.addEventListener('input', sync);
+  document.getElementById('addrow').addEventListener('submit', sync);
+}
+
+// Enter داخل خانة ينقل للخانة التالية بدل إرسال النموذج
+document.querySelectorAll('table.editable input[type=text], table.editable input[type=number]')
+  .forEach((el, i, all) => {
+    el.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const next = all[i + 1];
+      if (next) { next.focus(); next.select && next.select(); }
+    });
+  });
+
+// ركّز أول خانة في الصف الجديد
+const fresh = document.querySelector('tr.fresh input[type=text]');
+if (fresh) fresh.focus();
+</script>
+{% endblock %}

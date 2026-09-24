@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h1>المعامل والقاعات المشتركة</h1>
+{% include "assign_nav.html" %}
+
+<div class="card">
+  <p class="hint">
+    وقت التوليد يضمن النظام ألا يُستعمل نفس المعمل فوق طاقته في نفس اليوم والحصة.
+    اربط المعمل بالإسناد من شاشة «كل الإسنادات».
+  </p>
+  <form method="post" action="{{ url_for('add_room') }}">
+    <div class="row">
+      <div><label>اسم المعمل</label><input type="text" name="name" required></div>
+      <div><label>المادة (اختياري)</label>
+        <select name="subject_id">
+          <option value="">— بدون —</option>
+          {% for s in subjects %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select></div>
+      <div style="max-width:170px"><label>كم فصلاً في وقت واحد</label>
+        <input type="number" name="capacity" min="1" max="10" value="1"></div>
+      <div style="max-width:110px"><button class="btn">إضافة</button></div>
+    </div>
+  </form>
+
+  <table class="data" style="margin-top:.9rem">
+    <tr><th>المعمل</th><th>المادة</th><th>الطاقة</th><th></th></tr>
+    {% for r in rooms %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.subject_name or '—' }}</td>
+      <td>{{ r.capacity }} فصل في نفس الوقت</td>
+      <td style="width:1%">
+        <form method="post" action="{{ url_for('delete_room', rid=r.id) }}" class="inline">
+          <button class="btn sm danger">حذف</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="4" class="hint">لا توجد معامل</td></tr>{% endfor %}
+  </table>
+</div>
+
+{% endblock %}

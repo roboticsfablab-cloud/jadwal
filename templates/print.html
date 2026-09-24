@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>طباعة الجدول</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<style>
+  body{background:#fff}
+  .sheet{max-width:1100px;margin:0 auto;padding:1rem}
+  .pl{height:46px;display:block;margin:0 auto .25rem}
+  .head{text-align:center;margin-bottom:.6rem}
+  .head h1{font-size:1.25rem;margin:0}
+  .head p{margin:.1rem 0;color:#555;font-size:.9rem}
+  .sig{display:flex;gap:1rem;margin-top:.8rem;font-size:.85rem}
+  .sig div{flex:1;border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;min-height:46px}
+  .page{margin-bottom:2rem}
+  @media print{.sheet{max-width:none;padding:0}}
+</style>
+</head>
+<body>
+
+<div class="toolbar noprint" style="padding:.8rem 1rem;background:#f4f5f9">
+  <button class="btn" onclick="window.print()">طباعة / حفظ PDF</button>
+  <a class="btn soft" href="{{ url_for('print_view', kind=kind, sig=0 if signature else 1, colored=1 if colored else 0) }}">
+    {{ 'بدون خانة توقيع' if signature else 'مع خانة توقيع' }}
+  </a>
+  <a class="btn soft" href="{{ url_for('print_view', kind=kind, sig=1 if signature else 0, colored=0 if colored else 1) }}">
+    {{ 'بلا ألوان' if colored else 'ملوّن' }}
+  </a>
+  <a class="btn soft" href="{{ url_for('print_view', kind=kind, layout='combined', sig=1 if signature else 0, colored=1 if colored else 0) }}">
+    الجدول المجمّع
+  </a>
+  <a class="btn soft" href="{{ url_for('print_view', kind='teachers' if kind == 'sections' else 'sections', sig=1 if signature else 0, colored=1 if colored else 0) }}">
+    {{ 'جدول المعلمين' if kind == 'sections' else 'جدول الفصول' }}
+  </a>
+  <a class="btn soft" href="{{ url_for('grid', view=kind, colored=1 if colored else 0) }}">رجوع</a>
+</div>
+
+<div class="sheet">
+{% for o in owners %}
+  <div class="page">
+    <div class="head">
+      <img class="pl" src="{{ url_for('static', filename='img/mark.png') }}" alt="">
+      <h1>{{ st.school_name or 'جدول المدرسة' }}</h1>
+      <p>{{ st.school_stage_label }}</p>
+      <p><b>الجدول الأسبوعي — {{ o.title }}</b></p>
+    </div>
+
+    <table class="sched {{ '' if colored else 'nocolor' }}" style="width:100%">
+      <tr>
+        <th class="day">اليوم</th>
+        {% for p in range(1, max_p + 1) %}
+          {% set slot = (slots | selectattr('period_number','equalto',p) | list | first) %}
+          <th>{{ slot.name if slot else 'الحصة ' ~ p }}
+            {% if slot and slot.start_time %}<br><small style="font-weight:400">{{ slot.start_time }}</small>{% endif %}
+          </th>
+        {% endfor %}
+      </tr>
+      {% set lim = owner_limits.get(o.id, {}) %}
+      {% for d in days %}
+      <tr>
+        <th class="day">{{ DAY_NAMES[d] }}</th>
+        {% for p in range(1, max_p + 1) %}
+          {% if p > lim.get(d, max_p) %}
+            <td class="offday"></td>
+          {% elif p in breaks %}
+            <td class="brk"><small>فسحة</small></td>
+          {% else %}
+            {% set items = cells.get((o.id, d, p)) %}
+            <td>
+              {% for r in items or [] %}
+                <div class="cell c{{ r.color_index }}">
+                  <span class="s">{{ r.subject_name }}</span>
+                  <span class="t">
+                    {% if kind == 'sections' %}{{ r.teacher_name }}
+                    {% else %}{{ r.section_label }}{% endif %}
+                  </span>
+                </div>
+              {% endfor %}
+            </td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+
+    {% if signature %}
+    <div class="sig">
+      <div>رئيسة الإشراف التعليمي: {{ st.manager_name or '' }}</div>
+      <div>التوقيع:</div>
+      <div>التاريخ: &nbsp; &nbsp; / &nbsp; &nbsp; / 14&nbsp;&nbsp;هـ</div>
+    </div>
+    {% endif %}
+  </div>
+{% else %}
+  <p>لا توجد بيانات للطباعة.</p>
+{% endfor %}
+</div>
+
+</body>
+</html>
