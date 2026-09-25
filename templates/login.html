@@ -4,39 +4,242 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>تسجيل الدخول — {{ school_name }}</title>
+<meta name="theme-color" content="#00806F">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 <style>
-  body{display:grid;place-items:center;min-height:100vh;
-       background:linear-gradient(135deg,var(--brand-tint) 0%,var(--bg) 45%,var(--accent-soft) 100%)}
-  .loginbox{width:min(390px,92vw);background:var(--card);border:1px solid var(--line);
-            border-radius:18px;padding:2rem 1.7rem;box-shadow:var(--shadow-2);
-            text-align:center}
-  .loginbox img{height:96px;margin-bottom:.7rem}
-  .loginbox h1{font-size:1.18rem;margin:0 0 .15rem}
-  .loginbox p{color:var(--muted);font-size:.87rem;margin:0 0 1.3rem}
-  .loginbox label{text-align:right}
-  .loginbox .btn{width:100%;margin-top:.9rem;padding:.62rem}
-  .foot{margin-top:1.1rem;font-size:.78rem;color:var(--muted)}
+  body{min-height:100svh; display:grid; place-items:center; padding:clamp(.8rem,3vw,2.2rem);
+       background:
+         radial-gradient(1100px 620px at 88% -10%, var(--brand-tint) 0%, transparent 62%),
+         radial-gradient(900px 560px at 4% 108%, var(--accent-soft) 0%, transparent 60%),
+         var(--bg);
+       overflow-x:hidden}
+
+  .authcard{
+    width:min(1020px,100%); display:grid; grid-template-columns:1.06fr .94fr;
+    background:var(--card); border:1px solid var(--line);
+    border-radius:24px; overflow:hidden; box-shadow:var(--shadow-3), var(--shadow-2);
+    animation:rise .5s cubic-bezier(.22,1,.36,1) both;
+  }
+  @keyframes rise{from{opacity:0; transform:translateY(14px) scale(.985)}}
+
+  /* ------------------------------------------------ اللوحة التعريفية */
+  .brandside{
+    position:relative; isolation:isolate; overflow:hidden;
+    padding:clamp(1.8rem,3.4vw,2.9rem) clamp(1.5rem,3vw,2.6rem);
+    color:#fff; display:flex; flex-direction:column; gap:1.5rem;
+    background:linear-gradient(152deg,var(--brand-dark) 0%,var(--brand) 46%,var(--accent) 100%);
+  }
+  /* أقواس تُحاكي قوسَي الشعار */
+  .brandside::before,.brandside::after{
+    content:""; position:absolute; border-radius:50%; z-index:-1;
+    border:1px solid rgba(255,255,255,.17);
+  }
+  .brandside::before{width:430px;height:430px; inset-inline-start:-165px; top:-150px;
+                     background:radial-gradient(circle at 34% 34%,rgba(255,255,255,.13),transparent 66%)}
+  .brandside::after {width:330px;height:330px; inset-inline-end:-120px; bottom:-135px;
+                     background:radial-gradient(circle at 62% 62%,rgba(255,255,255,.09),transparent 68%)}
+
+  .plate{
+    align-self:flex-start; background:#fff; border-radius:18px;
+    padding:.85rem 1.1rem; box-shadow:0 10px 26px rgba(0,60,52,.22);
+  }
+  .plate img{display:block; height:clamp(68px,7.6vw,92px); width:auto}
+
+  .brandside h1{margin:0 0 .3rem; font-size:clamp(1.22rem,2.1vw,1.5rem);
+                line-height:1.45; letter-spacing:-.2px}
+  .brandside .sub{margin:0; font-size:.9rem; line-height:1.75; color:rgba(255,255,255,.84)}
+  .rule{height:1px; background:rgba(255,255,255,.2); margin:.1rem 0}
+
+  .feats{list-style:none; margin:0; padding:0; display:grid; gap:.95rem}
+  .feats li{display:flex; align-items:flex-start; gap:.72rem}
+  .feats .ic{
+    flex:none; width:34px; height:34px; border-radius:10px; display:grid; place-items:center;
+    background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.22);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .feats svg{width:17px; height:17px; stroke:#fff; fill:none;
+             stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+  .feats b{display:block; font-size:.89rem; font-weight:700; margin-bottom:.1rem}
+  .feats span{font-size:.79rem; line-height:1.6; color:rgba(255,255,255,.76)}
+
+  /* ------------------------------------------------ لوحة النموذج */
+  .formside{
+    padding:clamp(1.8rem,3.4vw,3rem) clamp(1.5rem,3vw,2.7rem);
+    display:flex; flex-direction:column; justify-content:center; gap:.25rem;
+  }
+  .formside h2{margin:0 0 .25rem; font-size:clamp(1.1rem,1.9vw,1.3rem)}
+  .lede{margin:0 0 1.5rem; color:var(--muted); font-size:.87rem; line-height:1.7}
+
+  .field{position:relative; margin-bottom:.2rem}
+  .field input{padding-inline-end:2.9rem; font-size:.95rem; padding-block:.66rem;
+               letter-spacing:.02em}
+  .peek{
+    position:absolute; inset-inline-end:.3rem; top:50%; transform:translateY(-50%);
+    width:32px; height:32px; border:0; background:transparent; cursor:pointer;
+    border-radius:8px; display:grid; place-items:center; color:var(--muted);
+    transition:color .15s, background .15s;
+  }
+  .peek:hover{color:var(--brand-deep); background:var(--brand-soft)}
+  .peek:focus-visible{outline:none; box-shadow:var(--ring)}
+  .peek svg{width:18px;height:18px;stroke:currentColor;fill:none;
+            stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+  .hint{min-height:1.25rem; margin:.4rem 0 0; font-size:.78rem; color:var(--warn);
+        display:flex; align-items:center; gap:.35rem; opacity:0; transition:opacity .18s}
+  .hint.on{opacity:1}
+
+  .formside .btn{width:100%; margin-top:.85rem; padding:.72rem; font-size:.93rem}
+  .btn[data-busy]{pointer-events:none; opacity:.72}
+
+  .foot{margin-top:1.6rem; padding-top:1.1rem; border-top:1px solid var(--line-soft);
+        font-size:.77rem; color:var(--muted); line-height:1.75;
+        display:flex; align-items:flex-start; gap:.5rem}
+  .foot svg{flex:none; width:15px;height:15px; margin-top:.18rem; stroke:var(--brand);
+            fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+
+  /* ------------------------------------------------ الشاشات الصغيرة */
+  @media (max-width:840px){
+    .authcard{grid-template-columns:1fr; border-radius:20px}
+    .brandside{gap:1.1rem; padding:1.5rem 1.4rem}
+    .brandside::before{width:280px;height:280px;top:-120px;inset-inline-start:-110px}
+    .brandside::after{display:none}
+    .plate{padding:.6rem .85rem}
+    .plate img{height:58px}
+    .feats{display:none}
+    .rule{display:none}
+    .formside{padding:1.6rem 1.4rem 1.9rem}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .authcard{animation:none}
+  }
 </style>
 </head>
 <body>
 
-<form class="loginbox" method="post" autocomplete="on">
-  <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ school_name }}">
-  <h1>نظام إدارة الجدول المدرسي</h1>
-  <p>أدخل كلمة المرور للمتابعة</p>
+<main class="authcard">
 
-  {% if error %}<div class="note err" style="text-align:right">{{ error }}</div>{% endif %}
+  <!-- ===================================== التعريف بالنظام ===================================== -->
+  <section class="brandside">
+    <div class="plate">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ school_name }}">
+    </div>
 
-  <label for="pw">كلمة المرور</label>
-  <input type="password" id="pw" name="password" required autofocus
-         autocomplete="current-password" placeholder="••••••••">
-  <input type="hidden" name="next" value="{{ next }}">
-  <button class="btn">دخول</button>
+    <div>
+      <h1>نظام إدارة الجدول المدرسي</h1>
+      <p class="sub">{{ school_name }}</p>
+    </div>
 
-  <div class="foot">هذه الصفحة تحمي بيانات المدرسة — لا تشارك كلمة المرور خارج الإدارة.</div>
-</form>
+    <div class="rule"></div>
+
+    <ul class="feats">
+      <li>
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M13 2 4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg></span>
+        <div><b>توليد تلقائي للجدول</b>
+          <span>يوزّع نصاب كل معلمة على الأيام بلا تعارض، ويحترم الأنصبة والاستثناءات.</span></div>
+      </li>
+      <li>
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>
+        <div><b>تعديل محميّ من الأخطاء</b>
+          <span>أي نقل أو تبديل يُفحص قبل تنفيذه، فلا تنشأ حصّتان لمعلمة في وقت واحد.</span></div>
+      </li>
+      <li>
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg></span>
+        <div><b>تصدير Excel و PDF</b>
+          <span>جداول الفصول والمعلمات، مجمّعة أو مفصّلة، بالألوان أو بالأبيض للطباعة.</span></div>
+      </li>
+      <li>
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg></span>
+        <div><b>فحص سلامة مستمرّ</b>
+          <span>يكشف التناقضات الصامتة بين الإسناد والجدول قبل أن تصل إلى المعلمات.</span></div>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ===================================== النموذج ===================================== -->
+  <section class="formside">
+    <form method="post" autocomplete="on" id="lf">
+      <h2>تسجيل الدخول</h2>
+      <p class="lede">هذه الصفحة للإدارة وحدها. أدخلي كلمة المرور للوصول إلى الجدول.</p>
+
+      {% if error %}
+        <div class="note err" role="alert">{{ error }}</div>
+      {% endif %}
+
+      <label for="pw">كلمة المرور</label>
+      <div class="field">
+        <input type="password" id="pw" name="password" required autofocus
+               autocomplete="current-password" placeholder="••••••••"
+               aria-describedby="caps">
+        <button type="button" class="peek" id="peek" aria-label="إظهار كلمة المرور"
+                aria-pressed="false" tabindex="0">
+          <svg id="eye" viewBox="0 0 24 24">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+
+      <p class="hint" id="caps" role="status">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+             stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 9v4"/><path d="M12 17h.01"/>
+          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
+        </svg>
+        مفتاح Caps Lock مُفعَّل — قد تُكتب الحروف كبيرة.
+      </p>
+
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn" id="go">دخول</button>
+
+      <div class="foot">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span>الجدول وأسماء المعلمات بيانات داخلية. لا تشاركي كلمة المرور خارج الإدارة.</span>
+      </div>
+    </form>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  var pw = document.getElementById('pw');
+  var peek = document.getElementById('peek');
+  var eye = document.getElementById('eye');
+  var caps = document.getElementById('caps');
+  var form = document.getElementById('lf');
+  var go = document.getElementById('go');
+
+  var OPEN = '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>';
+  var SHUT = '<path d="M3 3l18 18"/><path d="M10.6 5.2A9.9 9.9 0 0 1 12 5c6.4 0 10 7 10 7a18 18 0 0 1-3.3 4.1"/>'
+           + '<path d="M6.5 6.7A17.6 17.6 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 4.2-.9"/>'
+           + '<path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>';
+
+  peek.addEventListener('click', function () {
+    var show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    eye.innerHTML = show ? SHUT : OPEN;
+    peek.setAttribute('aria-pressed', show ? 'true' : 'false');
+    peek.setAttribute('aria-label', show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور');
+    pw.focus();
+  });
+
+  // تنبيه Caps Lock: سبب شائع لرفض كلمة صحيحة
+  function capsCheck(e) {
+    if (typeof e.getModifierState !== 'function') return;
+    caps.classList.toggle('on', e.getModifierState('CapsLock'));
+  }
+  pw.addEventListener('keydown', capsCheck);
+  pw.addEventListener('keyup', capsCheck);
+  pw.addEventListener('blur', function () { caps.classList.remove('on'); });
+
+  // حالة انتظار: القاعدة على الإنترنت فقد يتأخّر الردّ ثانية
+  form.addEventListener('submit', function () {
+    go.setAttribute('data-busy', '1');
+    go.textContent = 'جارٍ التحقّق…';
+  });
+})();
+</script>
 
 </body>
 </html>
