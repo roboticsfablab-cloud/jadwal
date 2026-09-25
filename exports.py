@@ -665,3 +665,394 @@ def build_pdf_combined(version_id, kind="sections", signature=False, colored=Tru
     doc.build(story)
     buf.seek(0)
     return buf
+
+
+# ------------------------------------------------------ تصدير الإسنادات
+#
+# نصاب المعلمات: صف لكل (معلمة، مادة، فصل)، تُدمج خانات المعلمة ونصابها
+# رأسياً على كل صفوفها، وتُدمج المادة على فصولها.
+# المطلوب والمُسند: صف لكل فصل مع حالته.
+# البيانات تُحسب في app.py وتُمرَّر هنا جاهزة.
+
+STATUS_FILL = {"ok": "E7F6EE", "warn": "FDF6E3", "err": "FDECEC"}
+STATUS_INK = {"ok": "106B45", "warn": "8A5A12", "err": "C62828"}
+
+
+def load_level(original, actual):
+    """حالة النصاب الفعلي مقارنة بالأصلي: ok مطابق، warn أقل، err زائد."""
+    if actual > original:
+        return "err"
+    if actual == original:
+        return "ok"
+    return "warn"
+
+
+def flat_teacher_rows(teachers):
+    """
+    يفرد بيانات المعلمات إلى صفوف مع مدى دمج كل خانة: صف لكل
+    (معلمة، مادة، فصل). المعلمة بلا إسناد تأخذ صفاً واحداً فارغاً.
+    """
+    out = []
+    n = 0
+    for t in teachers:
+        subjects = t["subjects"] or [{"name": "—", "color_index": None,
+                                      "rows": [{"section_label": "—",
+                                                "periods": None}]}]
+        t_span = sum(len(sb["rows"]) for sb in subjects)
+        n += 1
+        first_t = True
+        for sb in subjects:
+            first_s = True
+            for r in sb["rows"]:
+                out.append({"n": n, "teacher": t, "first_t": first_t,
+                            "t_span": t_span, "subject": sb, "first_s": first_s,
+                            "s_span": len(sb["rows"]),
+                            "section_label": r["section_label"],
+                            "periods": r["periods"],
+                            "level": load_level(t["original"], t["actual"])})
+                first_t = first_s = False
+    return out
+
+
+def _xl_head(ws, st, title):
+    ws.sheet_view.rightToLeft = True
+    ws.cell(row=1, column=1,
+            value=st.get("school_name") or "جدول المدرسة").font = Font(size=15, bold=True)
+    ws.cell(row=2, column=1, value=title).font = Font(size=11)
+
+
+def _xl_header_cell(ws, row, col, value, colored):
+    c = ws.cell(row=row, column=col, value=value)
+    c.font = Font(bold=True)
+    c.fill = PatternFill("solid", fgColor=pick(colored, "E0E7FF", "E6E6E6"))
+    c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    c.border = BORDER
+    return c
+
+
+def _xl_total_row(ws, r, values, colored):
+    for col, v in enumerate(values, start=1):
+        c = ws.cell(row=r, column=col, value=v)
+        c.font = Font(bold=True)
+        c.border = Border(left=THIN, right=THIN, top=MED, bottom=MED)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.fill = PatternFill("solid", fgColor=pick(colored, "E0E7FF", "E6E6E6"))
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+
+
+def _xl_save(wb):
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def build_excel_teacher_loads(teachers, st, colored=True):
+    """نصاب المعلمات وإسناداتهن في ورقة Excel واحدة."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "نصاب المعلمات"
+    _xl_head(ws, st, "نصاب المعلمات والمواد المسندة")
+
+    h1, h2 = 4, 5
+    for col, label in ((1, "م"), (2, "اسم المعلمة"), (5, "المادة"),
+                       (6, "الصف والشعبة"), (7, "عدد الحصص")):
+        _xl_header_cell(ws, h1, col, label, colored)
+        _xl_header_cell(ws, h2, col, None, colored)
+        ws.merge_cells(start_row=h1, start_column=col, end_row=h2, end_column=col)
+    _xl_header_cell(ws, h1, 3, "النصاب", colored)
+    _xl_header_cell(ws, h1, 4, None, colored)
+    ws.merge_cells(start_row=h1, start_column=3, end_row=h1, end_column=4)
+    _xl_header_cell(ws, h2, 3, "الأصلي", colored)
+    _xl_header_cell(ws, h2, 4, "الفعلي", colored)
+
+    thick_top = Border(left=THIN, right=THIN, top=MED, bottom=THIN)
+    r = h2 + 1
+    for row in flat_teacher_rows(teachers):
+        t, sb = row["teacher"], row["subject"]
+        top = thick_top if row["first_t"] else BORDER
+        for col in range(1, 8):
+            c = ws.cell(row=r, column=col)
+            c.border = top
+            c.alignment = Alignment(horizontal="center", vertical="center",
+                                    wrap_text=True)
+        if row["first_t"]:
+            span = row["t_span"]
+            lvl = row["level"]
+            ws.cell(row=r, column=1, value=row["n"])
+            nm = ws.cell(row=r, column=2, value=t["name"])
+            nm.font = Font(bold=True)
+            nm.alignment = Alignment(horizontal="right", vertical="center",
+                                     wrap_text=True)
+            orig = ws.cell(row=r, column=3, value=t["original"])
+            orig.font = Font(bold=True)
+            act = ws.cell(row=r, column=4, value=t["actual"])
+            act.font = Font(bold=True,
+                            color=STATUS_INK[lvl] if colored else "000000")
+            if colored:
+                orig.fill = PatternFill("solid", fgColor="EEF1F6")
+                act.fill = PatternFill("solid", fgColor=STATUS_FILL[lvl])
+            if span > 1:
+                for col in (1, 2, 3, 4):
+                    ws.merge_cells(start_row=r, start_column=col,
+                                   end_row=r + span - 1, end_column=col)
+        tint = None
+        if colored and sb.get("color_index") is not None:
+            tint = PatternFill("solid", fgColor=PALETTE[
+                int(sb["color_index"] or 0) % len(PALETTE)])
+        if row["first_s"]:
+            c = ws.cell(row=r, column=5, value=sb["name"])
+            c.font = Font(bold=True)
+            if tint:
+                c.fill = tint
+            if row["s_span"] > 1:
+                ws.merge_cells(start_row=r, start_column=5,
+                               end_row=r + row["s_span"] - 1, end_column=5)
+        c6 = ws.cell(row=r, column=6, value=row["section_label"])
+        c7 = ws.cell(row=r, column=7, value=row["periods"])
+        if tint:
+            c6.fill = tint
+            c7.fill = tint
+        ws.row_dimensions[r].height = 20
+        r += 1
+
+    s_orig = sum(t["original"] for t in teachers)
+    s_act = sum(t["actual"] for t in teachers)
+    _xl_total_row(ws, r, ["المجموع", None, s_orig, s_act, None, None, s_act],
+                  colored)
+
+    for col, w in zip("ABCDEFG", (5, 28, 9, 9, 22, 22, 11)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = ws.cell(row=h2 + 1, column=1)
+    return _xl_save(wb)
+
+
+def build_excel_balance(sections, st, colored=True):
+    """المطلوب والمُسند والمُدرج لكل فصل."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "المطلوب والمسند"
+    _xl_head(ws, st, "المطلوب والمُسند لكل فصل")
+
+    h = 4
+    for col, label in enumerate(BALANCE_HEADS, start=1):
+        _xl_header_cell(ws, h, col, label, colored)
+
+    r = h + 1
+    for n, s in enumerate(sections, start=1):
+        vals = [n, s["label"], s["required"], s["assigned"], s["scheduled"],
+                s["slots"], s["status"]]
+        for col, v in enumerate(vals, start=1):
+            c = ws.cell(row=r, column=col, value=v)
+            c.border = BORDER
+            c.alignment = Alignment(horizontal="right" if col == 2 else "center",
+                                    vertical="center", wrap_text=True)
+        ws.cell(row=r, column=2).font = Font(bold=True)
+        st_cell = ws.cell(row=r, column=7)
+        st_cell.font = Font(bold=True,
+                            color=STATUS_INK[s["level"]] if colored else "000000")
+        if colored:
+            st_cell.fill = PatternFill("solid", fgColor=STATUS_FILL[s["level"]])
+            ws.cell(row=r, column=4).fill = PatternFill("solid", fgColor="EEF1F6")
+        ws.row_dimensions[r].height = 20
+        r += 1
+
+    tot = balance_totals(sections)
+    _xl_total_row(ws, r, ["المجموع", None, tot["required"], tot["assigned"],
+                          tot["scheduled"], tot["slots"], None], colored)
+
+    for col, w in zip("ABCDEFG", (5, 26, 11, 11, 11, 15, 30)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = ws.cell(row=h + 1, column=1)
+    return _xl_save(wb)
+
+
+BALANCE_HEADS = ["م", "الفصل", "المطلوب", "المُسند", "المُدرج",
+                 "الخانات المتاحة", "الحالة"]
+
+
+def balance_totals(sections):
+    return {k: sum(s[k] for s in sections)
+            for k in ("required", "assigned", "scheduled", "slots")}
+
+
+def _pdf_doc(buf):
+    return SimpleDocTemplate(buf, pagesize=A4,
+                             rightMargin=10 * mm, leftMargin=10 * mm,
+                             topMargin=10 * mm, bottomMargin=10 * mm)
+
+
+def _pdf_head(st, title):
+    h1 = ParagraphStyle("h1", fontName=FONT_BOLD, fontSize=15, alignment=1, leading=19)
+    h2 = ParagraphStyle("h2", fontName=FONT_NAME, fontSize=10, alignment=1,
+                        textColor=colors.HexColor("#555555"), leading=14)
+    story = []
+    mark = logo_flowable(13)
+    if mark is not None:
+        story += [mark, Spacer(1, 1.5 * mm)]
+    story += [Paragraph(ar(st.get("school_name") or "جدول المدرسة"), h1),
+              Paragraph(ar(title), h2), Spacer(1, 5 * mm)]
+    return story
+
+
+def _pdf_signature(st, width):
+    cs = ParagraphStyle("sg", fontName=FONT_NAME, fontSize=9, alignment=1, leading=11)
+    sig = Table([[Paragraph(ar("رئيسة الإشراف التعليمي: %s"
+                               % (st.get("manager_name") or "")), cs),
+                  Paragraph(ar("التوقيع: ................"), cs),
+                  Paragraph(ar("التاريخ:     /     / 14   هـ"), cs)]],
+                colWidths=[width / 3.0] * 3, rowHeights=[12 * mm])
+    sig.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#B8C0CC")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    return [Spacer(1, 7 * mm), sig]
+
+
+def _hex(h):
+    return colors.HexColor("#" + h)
+
+
+def _pdf_table(doc, data, widths, style, repeat):
+    """يعكس الأعمدة للعربية (العمود الأول منطقياً يصير أقصى اليمين)."""
+    scale = doc.width / sum(widths)
+    widths = [w * scale for w in reversed(widths)]
+    data = [list(reversed(r)) for r in data]
+    t = Table(data, colWidths=widths, repeatRows=repeat)
+    t.setStyle(TableStyle(style))
+    return t
+
+
+def _pdf_base_style(colored, head_rows):
+    last = head_rows - 1
+    return [
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.HexColor("#5B6577")),
+        ("BOX", (0, 0), (-1, -1), 1.8, colors.HexColor("#2B3444")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, last), _hex(pick(colored, "DDE3F5", "E6E6E6"))),
+        ("LINEBELOW", (0, last), (-1, last), 1.8, colors.HexColor("#2B3444")),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+    ]
+
+
+def _pdf_total_style(ri, colored, L):
+    return [("SPAN", (L(1), ri), (L(0), ri)),
+            ("LINEABOVE", (0, ri), (-1, ri), 1.8, colors.HexColor("#2B3444")),
+            ("BACKGROUND", (0, ri), (-1, ri), _hex(pick(colored, "DDE3F5", "E6E6E6")))]
+
+
+def build_pdf_teacher_loads(teachers, st, signature=False, colored=True):
+    _ensure_font()
+    buf = io.BytesIO()
+    doc = _pdf_doc(buf)
+    story = _pdf_head(st, "نصاب المعلمات والمواد المسندة")
+
+    hs = ParagraphStyle("hs", fontName=FONT_BOLD, fontSize=9.5, alignment=1, leading=12)
+    bs = ParagraphStyle("bs", fontName=FONT_NAME, fontSize=9, alignment=1, leading=11)
+    bb = ParagraphStyle("bb", fontName=FONT_BOLD, fontSize=9.5, alignment=1, leading=11.5)
+    nm = ParagraphStyle("nm", fontName=FONT_BOLD, fontSize=9.5, alignment=2, leading=11.5)
+
+    # الترتيب المنطقي (من اليمين): م، الاسم، الأصلي، الفعلي، المادة، الصف، الحصص
+    data = [[Paragraph(ar("م"), hs), Paragraph(ar("اسم المعلمة"), hs),
+             "", Paragraph(ar("النصاب"), hs),
+             Paragraph(ar("المادة"), hs), Paragraph(ar("الصف والشعبة"), hs),
+             Paragraph(ar("عدد الحصص"), hs)],
+            ["", "", Paragraph(ar("الأصلي"), hs), Paragraph(ar("الفعلي"), hs),
+             "", "", ""]]
+    # موقع العمود المنطقي k بعد العكس. ReportLab يعرض محتوى أول خانة في
+    # الدمج فقط، وبعد العكس تصير آخر خانة منطقية هي الأولى - فالنص فيها.
+    L = lambda k: 6 - k
+    style = _pdf_base_style(colored, 2)
+    for k in (0, 1, 4, 5, 6):
+        style.append(("SPAN", (L(k), 0), (L(k), 1)))
+    style.append(("SPAN", (L(3), 0), (L(2), 0)))
+
+    ri = 2
+    for row in flat_teacher_rows(teachers):
+        t, sb = row["teacher"], row["subject"]
+        line = [""] * 7
+        if row["first_t"]:
+            lvl = row["level"]
+            line[0] = Paragraph(str(row["n"]), bs)
+            line[1] = Paragraph(ar(t["name"]), nm)
+            line[2] = Paragraph(str(t["original"]), bb)
+            line[3] = Paragraph('<font color="#%s">%d</font>' % (
+                STATUS_INK[lvl] if colored else "000000", t["actual"]), bb)
+            end = ri + row["t_span"] - 1
+            if end > ri:
+                for k in (0, 1, 2, 3):
+                    style.append(("SPAN", (L(k), ri), (L(k), end)))
+            if ri > 2:
+                style.append(("LINEABOVE", (0, ri), (-1, ri), 1.4,
+                              colors.HexColor("#2B3444")))
+            if colored:
+                style.append(("BACKGROUND", (L(2), ri), (L(2), end), _hex("EEF1F6")))
+                style.append(("BACKGROUND", (L(3), ri), (L(3), end),
+                              _hex(STATUS_FILL[lvl])))
+        if row["first_s"]:
+            line[4] = Paragraph(ar(sb["name"]), bb)
+            if row["s_span"] > 1:
+                style.append(("SPAN", (L(4), ri), (L(4), ri + row["s_span"] - 1)))
+        line[5] = Paragraph(ar(row["section_label"]), bs)
+        line[6] = Paragraph("" if row["periods"] is None else str(row["periods"]), bb)
+        if colored and sb.get("color_index") is not None:
+            style.append(("BACKGROUND", (L(6), ri), (L(4), ri),
+                          _hex(PALETTE[int(sb["color_index"] or 0) % len(PALETTE)])))
+        data.append(line)
+        ri += 1
+
+    s_orig = sum(t["original"] for t in teachers)
+    s_act = sum(t["actual"] for t in teachers)
+    data.append(["", Paragraph(ar("المجموع"), hs), Paragraph(str(s_orig), hs),
+                 Paragraph(str(s_act), hs), "", "", Paragraph(str(s_act), hs)])
+    style += _pdf_total_style(ri, colored, L)
+
+    story.append(_pdf_table(doc, data, [10, 50, 17, 17, 38, 38, 20], style, 2))
+    if signature:
+        story += _pdf_signature(st, doc.width)
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def build_pdf_balance(sections, st, signature=False, colored=True):
+    _ensure_font()
+    buf = io.BytesIO()
+    doc = _pdf_doc(buf)
+    story = _pdf_head(st, "المطلوب والمُسند لكل فصل")
+
+    hs = ParagraphStyle("hs", fontName=FONT_BOLD, fontSize=9.5, alignment=1, leading=12)
+    bs = ParagraphStyle("bs", fontName=FONT_NAME, fontSize=9.5, alignment=1, leading=11.5)
+    nm = ParagraphStyle("nm", fontName=FONT_BOLD, fontSize=9.5, alignment=2, leading=11.5)
+
+    data = [[Paragraph(ar(h), hs) for h in BALANCE_HEADS]]
+    L = lambda k: 6 - k
+    style = _pdf_base_style(colored, 1)
+    for ri, s in enumerate(sections, start=1):
+        ink = STATUS_INK[s["level"]] if colored else "000000"
+        data.append([Paragraph(str(ri), bs), Paragraph(ar(s["label"]), nm),
+                     Paragraph(str(s["required"]), bs),
+                     Paragraph(str(s["assigned"]), bs),
+                     Paragraph(str(s["scheduled"]), bs),
+                     Paragraph(str(s["slots"]), bs),
+                     Paragraph('<font color="#%s">%s</font>'
+                               % (ink, ar(s["status"])), hs)])
+        if colored:
+            style.append(("BACKGROUND", (L(6), ri), (L(6), ri),
+                          _hex(STATUS_FILL[s["level"]])))
+            style.append(("BACKGROUND", (L(3), ri), (L(3), ri), _hex("EEF1F6")))
+    ri = len(data)
+    tot = balance_totals(sections)
+    data.append(["", Paragraph(ar("المجموع"), hs),
+                 Paragraph(str(tot["required"]), hs),
+                 Paragraph(str(tot["assigned"]), hs),
+                 Paragraph(str(tot["scheduled"]), hs),
+                 Paragraph(str(tot["slots"]), hs), ""])
+    style += _pdf_total_style(ri, colored, L)
+
+    story.append(_pdf_table(doc, data, [10, 50, 20, 20, 20, 24, 46], style, 1))
+    if signature:
+        story += _pdf_signature(st, doc.width)
+    doc.build(story)
+    buf.seek(0)
+    return buf

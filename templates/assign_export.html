@@ -1,0 +1,21 @@
+{# شريط تصدير الإسنادات - نفس خيارات صفحة الجداول: ملوّن/بلا ألوان، معاينة، PDF، Excel.
+   المتغيّر exp_kinds: قائمة من teachers و/أو balance #}
+{% set colored = request.args.get('colored', '1') != '0' %}
+{% set c = 1 if colored else 0 %}
+<div class="card">
+  <div class="toolbar" style="margin:0">
+    <h2 style="margin:0">التصدير</h2>
+    <div class="tabs">
+      <a href="{{ url_for(request.endpoint, colored=1) }}" class="{{ 'on' if colored }}">ملوّن</a>
+      <a href="{{ url_for(request.endpoint, colored=0) }}" class="{{ '' if colored else 'on' }}">بلا ألوان</a>
+    </div>
+  </div>
+  {% for k in exp_kinds %}
+  <div class="toolbar" style="margin:.7rem 0 0">
+    <b style="min-width:170px">{{ 'نصاب المعلمات والمواد المسندة' if k == 'teachers' else 'المطلوب والمُسند للفصول' }}</b>
+    <a class="btn soft" href="{{ url_for('assign_print', kind=k, colored=c) }}" target="_blank">معاينة للطباعة</a>
+    <a class="btn soft" href="{{ url_for('assign_export', fmt='pdf', kind=k, sig=1, colored=c) }}">PDF</a>
+    <a class="btn soft" href="{{ url_for('assign_export', fmt='excel', kind=k, colored=c) }}">Excel</a>
+  </div>
+  {% endfor %}
+</div>

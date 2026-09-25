@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<style>
+  body{background:#fff}
+  .sheet{max-width:1000px;margin:0 auto;padding:1rem}
+  .pl{height:46px;display:block;margin:0 auto .25rem}
+  .head{text-align:center;margin-bottom:.7rem}
+  .head h1{font-size:1.25rem;margin:0}
+  .head p{margin:.1rem 0;color:#555;font-size:.9rem}
+  .sig{display:flex;gap:1rem;margin-top:.9rem;font-size:.85rem}
+  .sig div{flex:1;border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;min-height:46px}
+  table.rep{border-collapse:collapse;width:100%;font-size:.86rem;border:2px solid var(--grid-strong)}
+  table.rep th,table.rep td{border:1px solid var(--grid);padding:4px 6px;text-align:center;vertical-align:middle}
+  table.rep thead th{background:#E0E7FF;font-weight:700;border-bottom:2px solid var(--grid-strong)}
+  table.rep td.nm{text-align:right;font-weight:700}
+  table.rep td.b{font-weight:700}
+  table.rep td.orig{background:#EEF1F6;font-weight:700}
+  table.rep tr.tstart td{border-top:2px solid var(--grid-strong)}
+  table.rep tfoot td{background:#E0E7FF;font-weight:700;border-top:2px solid var(--grid-strong)}
+  table.rep td.lv-ok{background:var(--ok-soft);color:#106b45;font-weight:700}
+  table.rep td.lv-warn{background:var(--warn-soft);color:#8A5A12;font-weight:700}
+  table.rep td.lv-err{background:var(--err-soft);color:var(--err);font-weight:700}
+  .nocolor thead th,.nocolor tfoot td{background:#E6E6E6 !important}
+  .nocolor td.orig,.nocolor td.lv-ok,.nocolor td.lv-warn,.nocolor td.lv-err{background:#fff !important;color:#000 !important}
+  @media print{
+    .sheet{max-width:none;padding:0}
+    table.rep th,table.rep td{border:0.6pt solid #333 !important}
+    table.rep tr.tstart td,table.rep thead th,table.rep tfoot td{border-top:1.4pt solid #000 !important}
+    table.rep tr{page-break-inside:avoid}
+    @page{size:A4 portrait;margin:10mm}
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar noprint" style="padding:.8rem 1rem;background:#f4f5f9">
+  <button class="btn" onclick="window.print()">طباعة / حفظ PDF</button>
+  <a class="btn soft" href="{{ url_for('assign_print', kind=kind, sig=0 if signature else 1, colored=1 if colored else 0) }}">
+    {{ 'بدون خانة توقيع' if signature else 'مع خانة توقيع' }}</a>
+  <a class="btn soft" href="{{ url_for('assign_print', kind=kind, sig=1 if signature else 0, colored=0 if colored else 1) }}">
+    {{ 'بلا ألوان' if colored else 'ملوّن' }}</a>
+  <a class="btn soft" href="{{ url_for('assign_print', kind='balance' if kind == 'teachers' else 'teachers', sig=1 if signature else 0, colored=1 if colored else 0) }}">
+    {{ 'المطلوب والمُسند' if kind == 'teachers' else 'نصاب المعلمات' }}</a>
+  <a class="btn soft" href="{{ url_for('assign_export', fmt='pdf', kind=kind, sig=1 if signature else 0, colored=1 if colored else 0) }}">PDF</a>
+  <a class="btn soft" href="{{ url_for('assign_export', fmt='excel', kind=kind, colored=1 if colored else 0) }}">Excel</a>
+  <a class="btn soft" href="{{ url_for('assign_list' if kind == 'teachers' else 'assign_balance', colored=1 if colored else 0) }}">رجوع</a>
+</div>
+
+<div class="sheet">
+  <div class="head">
+    <img class="pl" src="{{ url_for('static', filename='img/mark.png') }}" alt="">
+    <h1>{{ st.school_name or 'جدول المدرسة' }}</h1>
+    <p><b>{{ title }}</b></p>
+  </div>
+
+  {% if kind == 'teachers' %}
+  <table class="rep {{ '' if colored else 'nocolor' }}">
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:4%">م</th>
+        <th rowspan="2">اسم المعلمة</th>
+        <th colspan="2">النصاب</th>
+        <th rowspan="2">المادة</th>
+        <th rowspan="2">الصف والشعبة</th>
+        <th rowspan="2" style="width:10%">عدد الحصص</th>
+      </tr>
+      <tr><th style="width:8%">الأصلي</th><th style="width:8%">الفعلي</th></tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      {% set tint = ('c%d' % ((r.subject.color_index or 0) % 12)) if r.subject.color_index is not none else '' %}
+      <tr class="{{ 'tstart' if r.first_t }}">
+        {% if r.first_t %}
+          <td rowspan="{{ r.t_span }}">{{ r.n }}</td>
+          <td rowspan="{{ r.t_span }}" class="nm">{{ r.teacher.name }}</td>
+          <td rowspan="{{ r.t_span }}" class="orig">{{ r.teacher.original }}</td>
+          <td rowspan="{{ r.t_span }}" class="lv-{{ r.level }}">{{ r.teacher.actual }}</td>
+        {% endif %}
+        {% if r.first_s %}
+          <td rowspan="{{ r.s_span }}" class="b {{ tint }}">{{ r.subject.name }}</td>
+        {% endif %}
+        <td class="{{ tint }}">{{ r.section_label }}</td>
+        <td class="b {{ tint }}">{{ '' if r.periods is none else r.periods }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><td colspan="2">المجموع</td><td>{{ totals.original }}</td>
+          <td>{{ totals.actual }}</td><td></td><td></td><td>{{ totals.actual }}</td></tr>
+    </tfoot>
+  </table>
+
+  {% else %}
+  <table class="rep {{ '' if colored else 'nocolor' }}">
+    <thead>
+      <tr><th style="width:4%">م</th><th>الفصل</th><th>المطلوب</th><th>المُسند</th>
+          <th>المُدرج</th><th>الخانات المتاحة</th><th>الحالة</th></tr>
+    </thead>
+    <tbody>
+    {% for s in rows %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td class="nm">{{ s.label }}</td>
+        <td>{{ s.required }}</td>
+        <td class="orig">{{ s.assigned }}</td>
+        <td>{{ s.scheduled }}</td>
+        <td>{{ s.slots }}</td>
+        <td class="lv-{{ s.level }}">{{ s.status }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><td colspan="2">المجموع</td><td>{{ totals.required }}</td>
+          <td>{{ totals.assigned }}</td><td>{{ totals.scheduled }}</td>
+          <td>{{ totals.slots }}</td><td></td></tr>
+    </tfoot>
+  </table>
+  {% endif %}
+
+  {% if signature %}
+  <div class="sig">
+    <div>رئيسة الإشراف التعليمي: {{ st.manager_name or '' }}</div>
+    <div>التوقيع:</div>
+    <div>التاريخ:&nbsp;&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;/ 14&nbsp;&nbsp;هـ</div>
+  </div>
+  {% endif %}
+</div>
+
+</body>
+</html>

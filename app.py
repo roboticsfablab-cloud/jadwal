@@ -666,6 +666,121 @@ def assign_rooms():
         subjects=q("SELECT * FROM subjects ORDER BY sort_order, id"))
 
 
+# ------------------------------------------------------- تصدير الإسنادات
+
+def teacher_loads():
+    """
+    لكل معلمة: نصابها الأصلي (من شاشة المعلمين) والفعلي (مجموع حصص
+    إسناداتها)، ومواد إسنادها مرتبة، وتحت كل مادة فصولها وحصص كل فصل.
+    """
+    rows = q("SELECT a.teacher_id, a.periods_per_week, sb.id subject_id, "
+             "sb.name subject_name, sb.color_index, "
+             + db.SECTION_LABEL_SQL + " section_label "
+             "FROM assignments a "
+             "JOIN subjects sb ON sb.id = a.subject_id "
+             "JOIN sections se ON se.id = a.section_id "
+             "JOIN grades   g  ON g.id  = se.grade_id "
+             "ORDER BY sb.sort_order, sb.id, g.sort_order, se.sort_order, se.id")
+    by_teacher = defaultdict(list)
+    for r in rows:
+        by_teacher[r["teacher_id"]].append(r)
+    out = []
+    for t in q("SELECT * FROM teachers ORDER BY sort_order, id"):
+        subjects = []
+        for r in by_teacher.get(t["id"], ()):
+            if not subjects or subjects[-1]["id"] != r["subject_id"]:
+                subjects.append({"id": r["subject_id"], "name": r["subject_name"],
+                                 "color_index": r["color_index"], "rows": []})
+            subjects[-1]["rows"].append({"section_label": r["section_label"],
+                                         "periods": r["periods_per_week"]})
+        out.append({"id": t["id"], "name": t["name"],
+                    "original": int(t["max_periods_per_week"] or 0),
+                    "actual": sum(r["periods_per_week"]
+                                  for r in by_teacher.get(t["id"], ())),
+                    "subjects": subjects})
+    return out
+
+
+def balance_rows():
+    """صف لكل فصل: المطلوب والمُسند والمُدرج والخانات، وحالته نصاً ومستوى."""
+    _, per_section = assignment_stats()
+    out = []
+    for s_ in q(SECTIONS_SQL):
+        b = per_section.get(s_["id"])
+        if not b:
+            continue
+        if b["assigned"] > b["required"]:
+            status, level = "زائد %d" % (b["assigned"] - b["required"]), "err"
+        elif b["assigned"] < b["required"]:
+            status, level = "ناقص %d" % (b["required"] - b["assigned"]), "warn"
+        elif b["scheduled"] and b["scheduled"] < b["assigned"]:
+            status, level = "لم يُدرج %d" % (b["assigned"] - b["scheduled"]), "warn"
+        else:
+            status, level = "مطابق", "ok"
+        if b["required"] > b["slots"]:
+            status += " · المطلوب أكبر من الخانات"
+            level = "err"
+        out.append({"label": s_["section_label"], "required": b["required"],
+                    "assigned": b["assigned"], "scheduled": b["scheduled"],
+                    "slots": b["slots"], "status": status, "level": level})
+    return out
+
+
+ASSIGN_EXPORTS = {
+    # kind: (عنوان، اسم الملف، بيانات، Excel، PDF)
+    "teachers": ("نصاب المعلمات والمواد المسندة", "نصاب-المعلمات", teacher_loads,
+                 exports.build_excel_teacher_loads, exports.build_pdf_teacher_loads),
+    "balance": ("المطلوب والمُسند لكل فصل", "المطلوب-والمسند", balance_rows,
+                exports.build_excel_balance, exports.build_pdf_balance),
+}
+
+
+def school_settings():
+    conn = db.connect()
+    st = db.get_settings(conn)
+    conn.close()
+    return st
+
+
+def assign_export_kind():
+    kind = request.args.get("kind", "teachers")
+    return kind if kind in ASSIGN_EXPORTS else "teachers"
+
+
+@app.route("/assignments/print")
+def assign_print():
+    kind = assign_export_kind()
+    title, _, fetch, _, _ = ASSIGN_EXPORTS[kind]
+    data = fetch()
+    return render_template(
+        "print_assign.html", kind=kind, title=title, colored=want_colors(),
+        signature=request.args.get("sig") == "1", st=school_settings(),
+        rows=exports.flat_teacher_rows(data) if kind == "teachers" else data,
+        teachers=data if kind == "teachers" else [],
+        totals=(exports.balance_totals(data) if kind == "balance" else
+                {"original": sum(t["original"] for t in data),
+                 "actual": sum(t["actual"] for t in data)}))
+
+
+@app.route("/assignments/export/<fmt>")
+def assign_export(fmt):
+    kind = assign_export_kind()
+    _, fname, fetch, to_excel, to_pdf = ASSIGN_EXPORTS[kind]
+    colored = want_colors()
+    st = school_settings()
+    suffix = "" if colored else "-أبيض"
+    if fmt == "pdf":
+        buf = to_pdf(fetch(), st, signature=request.args.get("sig") == "1",
+                     colored=colored)
+        return send_file(buf, as_attachment=True, mimetype="application/pdf",
+                         download_name="%s%s.pdf" % (fname, suffix))
+    buf = to_excel(fetch(), st, colored=colored)
+    return send_file(buf, as_attachment=True,
+                     download_name="%s%s.xlsx" % (fname, suffix),
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "spreadsheetml.sheet")
+
+
 # ----------------------------------------------------- واجهات JSON للإسناد
 
 @app.route("/api/teacher/<int:tid>/subjects")
