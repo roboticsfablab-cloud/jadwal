@@ -134,6 +134,111 @@ def validate_add(ctx, section_id, teacher_id, day, period):
     return True, ""
 
 
+def validate_change(ctx, entry_id, section_id, subject_id, teacher_id,
+                    replace=False):
+    """
+    تغيير محتوى حصة في مكانها (المادة و/أو الفصل و/أو المعلم).
+    الخانة نفسها لا تتغيّر، فيكفي فحص الفصل الجديد والمعلم الجديد فيها.
+    replace=True: إن كان للفصل الجديد حصة في هذه الخانة تُستبدل (تُحذف).
+    يعيد (ok, why, ids الحصص التي ستُستبدل).
+    """
+    r = ctx.by_id.get(entry_id)
+    if r is None:
+        return False, "الحصة غير موجودة", []
+    if (section_id, subject_id, teacher_id) == (
+            r["section_id"], r["subject_id"], r["teacher_id"]):
+        return False, "لم يتغيّر شيء", []
+    ok, why = ctx.slot_allowed(section_id, r["day"], r["period_number"])
+    if not ok:
+        return False, why, []
+    problems = ctx.clash(section_id, teacher_id, r["day"], r["period_number"],
+                         ignore=(entry_id,))
+    displaced = sorted({i for k, i in problems if k == "section"})
+    if replace:
+        # حصة الفصل الجديد تُستبدل؛ ويبقى تعارض المعلم مرفوضاً ما لم يكن
+        # هو نفسه صاحب الحصة المستبدَلة
+        problems = [(k, i) for k, i in problems
+                    if k != "section" and i not in displaced]
+    if problems:
+        return False, "؛ ".join(ctx.describe(k, i) for k, i in problems), []
+    return True, "", displaced if replace else []
+
+
+def bump_assignment(conn, section_id, subject_id, teacher_id, delta):
+    """
+    يزيد نصاب الإسناد (فصل، مادة، معلم) أو ينقصه بمقدار delta، فيبقى
+    نصاب المعلم وعدد حصص الفصل مطابقين للجدول بعد التعديل اليدوي.
+    الإسناد الذي يصل إلى صفر يُحذف، وغير الموجود يُنشأ عند الزيادة.
+    يعيد رقم الإسناد بعد التعديل (أو None إن حُذف).
+    """
+    row = conn.execute(
+        "SELECT id, periods_per_week, double_periods FROM assignments "
+        "WHERE section_id=? AND subject_id=? AND teacher_id=? ORDER BY id LIMIT 1",
+        (section_id, subject_id, teacher_id)).fetchone()
+    if row is None:
+        if delta <= 0:
+            return None
+        cur = conn.execute(
+            "INSERT INTO assignments(section_id, subject_id, teacher_id, "
+            "periods_per_week, double_periods) VALUES (?,?,?,?,0)",
+            (section_id, subject_id, teacher_id, delta))
+        # المعلم صار يدرّس هذه المادة - أظهرها في شاشة المواد والإسناد
+        conn.execute("INSERT OR IGNORE INTO subject_teachers(subject_id, teacher_id) "
+                     "VALUES (?, ?)", (subject_id, teacher_id))
+        return cur.lastrowid
+    n = int(row["periods_per_week"] or 0) + delta
+    if n <= 0:
+        conn.execute("UPDATE schedule SET assignment_id = NULL WHERE assignment_id = ?",
+                     (row["id"],))
+        conn.execute("DELETE FROM assignments WHERE id = ?", (row["id"],))
+        return None
+    conn.execute("UPDATE assignments SET periods_per_week = ?, "
+                 "double_periods = MIN(double_periods, ?) WHERE id = ?",
+                 (n, n // 2, row["id"]))
+    return row["id"]
+
+
+def change_options(ctx, entry_id):
+    """خيارات نافذة تبديل الحصة: كل المواد والفصول والمعلمين، ومن منها مشغول."""
+    r = ctx.by_id.get(entry_id)
+    if r is None:
+        return None
+    d, p = r["day"], r["period_number"]
+    conn = ctx.conn
+    teaches = defaultdict(set)
+    for x in conn.execute("SELECT subject_id, teacher_id FROM subject_teachers"):
+        teaches[x["teacher_id"]].add(x["subject_id"])
+    subjects = [{"id": x["id"], "name": x["name"]} for x in conn.execute(
+        "SELECT id, name FROM subjects ORDER BY sort_order, id")]
+    sections = []
+    for x in conn.execute(
+            "SELECT se.id, " + db.SECTION_LABEL_SQL + " label FROM sections se "
+            "JOIN grades g ON g.id = se.grade_id ORDER BY g.sort_order, se.sort_order"):
+        ok, why = ctx.slot_allowed(x["id"], d, p)
+        occupants = [] if not ok else [
+            {k: ctx.by_id[i][k] for k in ("id", "subject_id", "teacher_id",
+                                          "subject_name", "teacher_name")}
+            for kind, i in ctx.clash(x["id"], None, d, p, ignore=(entry_id,))
+            if kind == "section"]
+        sections.append({"id": x["id"], "label": x["label"],
+                         "busy": "" if ok else why, "occupants": occupants})
+    teachers = []
+    for x in conn.execute("SELECT id, name FROM teachers ORDER BY sort_order, id"):
+        busy = "؛ ".join(ctx.describe(k, i) for k, i in
+                         ctx.clash(None, x["id"], d, p, ignore=(entry_id,))
+                         if k != "section")
+        teachers.append({"id": x["id"], "name": x["name"], "busy": busy,
+                         "subjects": sorted(teaches.get(x["id"], ()))})
+    assigns = [[a["section_id"], a["subject_id"], a["teacher_id"], a["periods_per_week"]]
+               for a in conn.execute("SELECT section_id, subject_id, teacher_id, "
+                                     "periods_per_week FROM assignments")]
+    return {"entry": {k: r[k] for k in ("id", "section_id", "subject_id", "teacher_id",
+                                        "day", "period_number", "subject_name",
+                                        "teacher_name", "section_label")},
+            "subjects": subjects, "sections": sections, "teachers": teachers,
+            "assignments": assigns}
+
+
 def safe_targets(ctx, entry_id):
     """الخانات التي يمكن نقل هذه الحصة إليها بلا تعارض - للتلوين الأخضر."""
     r = ctx.by_id.get(entry_id)

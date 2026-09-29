@@ -1266,6 +1266,16 @@ def grid_cell():
         ok, why = edits.validate_add(ctx, int(payload["section_id"]),
                                      int(payload["teacher_id"]),
                                      int(payload["day"]), int(payload["period"]))
+    elif action == "change":
+        cur = ctx.by_id.get(int(payload["id"]))
+        if cur is None:
+            conn.close()
+            return jsonify({"ok": False, "reason": "الحصة غير موجودة"})
+        new = (int(payload.get("section_id") or cur["section_id"]),
+               int(payload.get("subject_id") or cur["subject_id"]),
+               int(payload.get("teacher_id") or cur["teacher_id"]))
+        ok, why, displaced = edits.validate_change(
+            ctx, cur["id"], *new, replace=bool(payload.get("replace")))
     else:
         ok, why = True, ""
 
@@ -1280,8 +1290,30 @@ def grid_cell():
                      "AND version_id = ?",
                      (payload["day"], payload["period"], payload["id"], vid))
     elif action == "delete":
-        conn.execute("DELETE FROM schedule WHERE id = ? AND version_id = ?",
-                     (payload["id"], vid))
+        # الخانة تبقى فارغة، وينقص نصاب المعلم وحصص الفصل في الإسناد
+        cur = ctx.by_id.get(int(payload["id"]))
+        if cur is not None:
+            conn.execute("DELETE FROM schedule WHERE id = ? AND version_id = ?",
+                         (cur["id"], vid))
+            edits.bump_assignment(conn, cur["section_id"], cur["subject_id"],
+                                  cur["teacher_id"], -1)
+    elif action == "change":
+        # حصة الفصل الجديد في هذه الخانة تُحذف ويُنقص إسنادها
+        for rid in displaced:
+            old = ctx.by_id[rid]
+            conn.execute("DELETE FROM schedule WHERE id = ? AND version_id = ?",
+                         (rid, vid))
+            edits.bump_assignment(conn, old["section_id"], old["subject_id"],
+                                  old["teacher_id"], -1)
+        # الحصة نفسها في مكانها بمحتوى جديد: يُنقص الإسناد القديم ويُزاد الجديد
+        edits.bump_assignment(conn, cur["section_id"], cur["subject_id"],
+                              cur["teacher_id"], -1)
+        aid = edits.bump_assignment(conn, new[0], new[1], new[2], +1)
+        conn.execute(
+            "UPDATE schedule SET section_id=?, subject_id=?, teacher_id=?, "
+            "assignment_id=?, merge_group_id=NULL, co_group_id=NULL, "
+            "adjacency_group_id=NULL WHERE id=? AND version_id=?",
+            (new[0], new[1], new[2], aid, cur["id"], vid))
     elif action == "pin":
         conn.execute("UPDATE schedule SET is_pinned = ? WHERE id = ? AND version_id = ?",
                      (1 if payload.get("pinned") else 0, payload["id"], vid))
@@ -1294,6 +1326,22 @@ def grid_cell():
             conn.execute("UPDATE schedule SET day=?, period_number=? WHERE id=?",
                          (a["day"], a["period_number"], b["id"]))
     elif action == "add":
+        # إن تجاوزت الإضافة نصاب الإسناد يُزاد النصاب ليطابق الجدول
+        placed = conn.execute(
+            "SELECT COUNT(*) n FROM schedule WHERE version_id=? AND section_id=? "
+            "AND subject_id=? AND teacher_id=?",
+            (vid, payload["section_id"], payload["subject_id"],
+             payload["teacher_id"])).fetchone()["n"]
+        a = conn.execute(
+            "SELECT id, periods_per_week FROM assignments WHERE section_id=? "
+            "AND subject_id=? AND teacher_id=? ORDER BY id LIMIT 1",
+            (payload["section_id"], payload["subject_id"],
+             payload["teacher_id"])).fetchone()
+        if a is None or placed + 1 > a["periods_per_week"]:
+            edits.bump_assignment(conn, int(payload["section_id"]),
+                                  int(payload["subject_id"]),
+                                  int(payload["teacher_id"]),
+                                  placed + 1 - (a["periods_per_week"] if a else 0))
         conn.execute(
             "INSERT INTO schedule(version_id, section_id, subject_id, teacher_id, "
             "assignment_id, day, period_number, is_pinned) VALUES (?,?,?,?,?,?,?,1)",
@@ -1316,6 +1364,15 @@ def grid_targets(entry_id):
            "swappable": edits.swappable(ctx, entry_id)}
     conn.close()
     return jsonify(out)
+
+
+@app.route("/api/cell-change-options/<int:entry_id>")
+def api_cell_change_options(entry_id):
+    """خيارات نافذة تبديل مادة الحصة أو فصلها أو معلمها."""
+    conn = db.connect()
+    out = edits.change_options(edits.Ctx(conn, current_version()), entry_id)
+    conn.close()
+    return jsonify(out or {"error": "الحصة غير موجودة"})
 
 
 @app.route("/grid/autofix", methods=["POST"])

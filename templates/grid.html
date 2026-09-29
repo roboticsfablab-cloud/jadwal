@@ -86,17 +86,46 @@
   <p class="hint" style="margin:0">
     <b>اضغط خانة فارغة</b> لإضافة حصة — تظهر نافذة بالمواد المُسندة لهذا
     {{ 'الفصل ومعلميها' if view == 'sections' else 'المعلم وفصوله' }} فقط.
-    و<b>اضغط حصة موجودة</b> لتحديدها: تُلوَّن الخانات الآمنة بالأخضر والحصص
-    القابلة للتبديل بالأزرق. النقل أو التبديل الذي ينتج عنه تعارض <b>مرفوض</b>
+    و<b>اضغط حصة موجودة</b> لتظهر قائمتها: تبديل المادة أو {{ 'المعلمة' if view == 'sections' else 'الفصل' }}،
+    أو حذف الحصة وإبقاء خانتها فارغة — ويتحدّث الإسناد ونصاب المعلمة وحصص الفصل تلقائياً.
+    وتُلوَّن الخانات الآمنة لنقلها بالأخضر والحصص القابلة للتبديل معها بالأزرق. النقل أو التبديل الذي ينتج عنه تعارض <b>مرفوض</b>
     ويُعرض سببه. الخانات الرمادية المشطوبة خارج دوام ذلك اليوم.
   </p>
-  <div id="actions" class="toolbar" style="margin-top:.6rem;display:none">
-    <span class="badge" id="selinfo"></span>
-    <button class="btn sm soft" id="pin">تثبيت / إلغاء التثبيت</button>
-    <button class="btn sm danger" id="del">حذف الحصة</button>
-    <button class="btn sm soft" id="cancel">إلغاء التحديد</button>
-  </div>
   <div id="msg"></div>
+</div>
+
+<!-- قائمة الحصة المحدّدة: تظهر بجانب الخانة -->
+<div id="actions" class="cellmenu" style="display:none">
+  <div class="cm-head" id="selinfo"></div>
+  <button type="button" id="change">⇄ تبديل المادة / {{ 'المعلمة' if view == 'sections' else 'الفصل' }}</button>
+  <button type="button" id="pin">📌 تثبيت / إلغاء التثبيت</button>
+  <button type="button" id="del" class="danger">🗑 حذف الحصة (تبقى فارغة)</button>
+  <button type="button" id="cancel" class="muted">إلغاء التحديد</button>
+  <div class="cm-hint">أو اضغط خانة خضراء للنقل، أو حصة زرقاء للتبديل معها</div>
+</div>
+
+<!-- نافذة تبديل محتوى الحصة -->
+<div class="modal" id="chgModal">
+  <div class="box">
+    <h3>تبديل الحصة</h3>
+    <div class="sub" id="chgWhere"></div>
+
+    <label>المادة</label>
+    <select id="chgSubject"></select>
+
+    <div style="margin-top:.6rem">
+      <label>{{ 'المعلمة' if view == 'sections' else 'الفصل' }}</label>
+      <select id="chgSecond"></select>
+    </div>
+
+    <div class="note info" id="chgNote" style="margin-top:.7rem;display:none"></div>
+    <div class="note err" id="chgErr" style="margin-top:.7rem;display:none"></div>
+
+    <div class="toolbar" style="margin-top:1rem">
+      <button class="btn" id="chgSave" disabled>حفظ التبديل</button>
+      <button class="btn soft" id="chgCancel">إلغاء</button>
+    </div>
+  </div>
 </div>
 
 <!-- نافذة ملء خانة فارغة -->
@@ -208,6 +237,20 @@ function clearSelection() {
   actions.style.display = 'none';
 }
 
+/* القائمة تظهر ملاصقة للخانة المضغوطة، داخل حدود الشاشة */
+function showMenu(cellEl) {
+  actions.style.display = 'block';
+  const r = cellEl.getBoundingClientRect();
+  const w = actions.offsetWidth, h = actions.offsetHeight;
+  let left = r.left + window.scrollX + r.width / 2 - w / 2;
+  left = Math.max(window.scrollX + 8,
+                  Math.min(left, window.scrollX + document.documentElement.clientWidth - w - 8));
+  let top = r.bottom + window.scrollY + 6;
+  if (r.bottom + h + 12 > window.innerHeight) top = r.top + window.scrollY - h - 6;
+  actions.style.left = left + 'px';
+  actions.style.top = top + 'px';
+}
+
 /* الخانات الآمنة والحصص القابلة للتبديل يحسبها الخادم بنفس قواعد المولّد */
 async function highlight(entryId) {
   const d = await fetch(`/grid/targets/${entryId}`).then(r => r.json());
@@ -241,8 +284,11 @@ document.addEventListener('click', async e => {
     say('');
     cellEl.closest('td').classList.add('sel');
     selected = {id: id, pinned: cellEl.dataset.pinned === '1'};
-    selinfo.textContent = 'حصة محدّدة' + (selected.pinned ? ' (مثبّتة)' : '');
-    actions.style.display = 'flex';
+    selinfo.textContent =
+      cellEl.querySelector('.s').textContent.trim() + ' — ' +
+      cellEl.querySelector('.t').textContent.trim() +
+      (selected.pinned ? ' (مثبّتة)' : '');
+    showMenu(cellEl);
     highlight(id);
     return;
   }
@@ -375,8 +421,132 @@ addSave.onclick = async () => {
 document.getElementById('cancel').onclick = () => { clearSelection(); say(''); };
 
 document.getElementById('del').onclick = async () => {
-  if (!selected || !confirm('حذف هذه الحصة من الجدول؟')) return;
+  if (!selected || !confirm('حذف هذه الحصة وإبقاء خانتها فارغة؟\n' +
+      'سينقص نصاب المعلمة وحصص الفصل في الإسناد بحصة واحدة.')) return;
   await post('/grid/cell', {action: 'delete', id: selected.id});
+  location.reload();
+};
+
+/* ------------------------------------------ نافذة تبديل المادة / الفصل */
+const chgModal   = document.getElementById('chgModal');
+const chgSubject = document.getElementById('chgSubject');
+const chgSecond  = document.getElementById('chgSecond');
+const chgSave    = document.getElementById('chgSave');
+const chgNote    = document.getElementById('chgNote');
+const chgErr     = document.getElementById('chgErr');
+let CHG = null;
+
+function closeChg() { chgModal.classList.remove('show'); CHG = null; }
+document.getElementById('chgCancel').onclick = closeChg;
+chgModal.addEventListener('click', e => { if (e.target === chgModal) closeChg(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && chgModal.classList.contains('show')) closeChg();
+});
+
+const esc = t => String(t).replace(/[&<>"]/g, c =>
+  ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+
+document.getElementById('change').onclick = async () => {
+  if (!selected) return;
+  const d = await fetch(`/api/cell-change-options/${selected.id}`).then(r => r.json());
+  if (d.error) { say(d.error); return; }
+  CHG = d;
+  const e = d.entry;
+  document.getElementById('chgWhere').textContent =
+    `${DAYS[e.day]} · الحصة ${e.period_number} — الحالية: ${e.subject_name} / ` +
+    (VIEW === 'sections' ? e.teacher_name : e.section_label);
+  chgErr.style.display = 'none';
+
+  /* المواد: مواد المعلمة أولاً ثم البقية */
+  const mine = new Set((d.teachers.find(t => t.id === e.teacher_id) || {}).subjects || []);
+  const opt = s => `<option value="${s.id}">${esc(s.name)}</option>`;
+  const a = d.subjects.filter(s => mine.has(s.id)), b = d.subjects.filter(s => !mine.has(s.id));
+  chgSubject.innerHTML = (VIEW === 'teachers' && a.length && b.length)
+    ? `<optgroup label="مواد المعلمة">${a.map(opt).join('')}</optgroup>` +
+      `<optgroup label="مواد أخرى">${b.map(opt).join('')}</optgroup>`
+    : d.subjects.map(opt).join('');
+  chgSubject.value = e.subject_id;
+
+  /* الفصول (أو المعلمات) - المشغول في هذه الخانة معطّل */
+  const list = VIEW === 'sections' ? d.teachers : d.sections;
+  const cur = VIEW === 'sections' ? e.teacher_id : e.section_id;
+  chgSecond.innerHTML = list.map(x => {
+    const busy = x.id !== cur && x.busy;
+    const occ = (x.id !== cur && x.occupants && x.occupants.length)
+      ? ' — فيه «' + x.occupants.map(o => o.subject_name).join('، ') + '» (تُستبدل)' : '';
+    return `<option value="${x.id}" ${busy ? 'disabled' : ''} title="${esc(x.busy || '')}">` +
+      esc(x.label || x.name) + (busy ? ' — مشغول في هذه الحصة' : occ) + '</option>';
+  }).join('');
+  chgSecond.value = cur;
+  actions.style.display = 'none';
+  chgPreview();
+  chgModal.classList.add('show');
+};
+
+function chgTarget() {
+  const e = CHG.entry;
+  return {
+    section_id: VIEW === 'sections' ? e.section_id : +chgSecond.value,
+    teacher_id: VIEW === 'sections' ? +chgSecond.value : e.teacher_id,
+    subject_id: +chgSubject.value,
+  };
+}
+
+/* حصص الفصل الجديد في نفس الخانة - تُستبدل عند الحفظ */
+function chgOccupants() {
+  const t = chgTarget();
+  if (t.section_id === CHG.entry.section_id) return [];
+  return ((CHG.sections.find(s => s.id === t.section_id) || {}).occupants || []);
+}
+
+function periodsOf(sec, sub, tea) {
+  const a = CHG.assignments.find(x => x[0] === sec && x[1] === sub && x[2] === tea);
+  return a ? a[3] : 0;
+}
+
+/* معاينة أثر التبديل على الإسناد قبل الحفظ */
+function chgPreview() {
+  const e = CHG.entry, t = chgTarget();
+  const same = t.section_id === e.section_id && t.subject_id === e.subject_id &&
+               t.teacher_id === e.teacher_id;
+  chgSave.disabled = same;
+  chgNote.style.display = 'block';
+  if (same) {
+    chgNote.textContent = 'اختر مادة أو ' +
+      (VIEW === 'sections' ? 'معلمة مختلفة' : 'فصلاً مختلفاً') + ' — أو الاثنين معاً.';
+    return;
+  }
+  const subName = id => (CHG.subjects.find(s => s.id === id) || {}).name;
+  const secName = id => (CHG.sections.find(s => s.id === id) || {}).label;
+  const teaName = id => (CHG.teachers.find(s => s.id === id) || {}).name;
+  const label = (sec, sub, tea) => `${subName(sub)} — ${secName(sec)} — ${teaName(tea)}`;
+  const oldN = periodsOf(e.section_id, e.subject_id, e.teacher_id);
+  const newN = periodsOf(t.section_id, t.subject_id, t.teacher_id);
+  chgNote.innerHTML = '<b>أثر التبديل على الإسناد (حصص أسبوعياً):</b><br>' +
+    `${esc(label(e.section_id, e.subject_id, e.teacher_id))}: ${oldN} ← ${Math.max(0, oldN - 1)}` +
+    (oldN <= 1 ? ' (يُلغى الإسناد)' : '') + '<br>' +
+    `${esc(label(t.section_id, t.subject_id, t.teacher_id))}: ${newN} ← ${newN + 1}` +
+    (newN ? '' : ' (إسناد جديد)') +
+    chgOccupants().map(o => {
+      const n = periodsOf(t.section_id, o.subject_id, o.teacher_id);
+      return '<br><span style="color:#b42318">تُحذف حصة ' +
+        `${esc(label(t.section_id, o.subject_id, o.teacher_id))} من هذه الخانة: ` +
+        `${n} ← ${Math.max(0, n - 1)}</span>`;
+    }).join('');
+}
+chgSubject.onchange = chgSecond.onchange = () => { chgErr.style.display = 'none'; chgPreview(); };
+
+chgSave.onclick = async () => {
+  if (!CHG) return;
+  chgSave.disabled = true;
+  const r = await post('/grid/cell', {action: 'change', id: CHG.entry.id,
+                                      replace: true, ...chgTarget()});
+  if (!r.ok) {
+    chgErr.style.display = 'block';
+    chgErr.textContent = 'تعذّر التبديل: ' + r.reason;
+    chgSave.disabled = false;
+    return;
+  }
   location.reload();
 };
 
