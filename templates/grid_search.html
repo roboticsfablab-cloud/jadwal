@@ -1,0 +1,113 @@
+{# بحث عن فصل أو معلمة: قائمة منسدلة بالأسماء المشابهة، والاختيار ينزل إلى
+   جدولها ويحيطه بإطار متوهّج يبقى حتى تحديث الصفحة أو بحث آخر.
+   يُضمَّن في grid.html وgrid_combined.html #}
+<div class="gsearch" id="gsearch">
+  <input type="search" id="gsInput" autocomplete="off"
+         placeholder="ابحث عن فصل أو معلمة…" aria-label="بحث عن فصل أو معلمة">
+  <ul class="gs-list" id="gsList" role="listbox" hidden></ul>
+</div>
+
+<script>
+(function () {
+  const VIEW_NOW = '{{ view }}';
+  const LAYOUT_NOW = '{{ layout }}';
+  const COLORED = '{{ 1 if colored else 0 }}';
+  const ITEMS = {{ search_items | tojson }};
+  const KEY = 'jadwal_find';
+  const input = document.getElementById('gsInput');
+  const list = document.getElementById('gsList');
+  let shown = [], active = -1;
+
+  /* توحيد الكتابة العربية: الهمزات، التاء المربوطة، الألف المقصورة، التشكيل */
+  const norm = t => String(t || '').toLowerCase()
+    .replace(/[ً-ْـ]/g, '')
+    .replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+    .replace(/[\/\-_.،,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  ITEMS.forEach(it => { it.key = norm(it.name); });
+
+  function match(q) {
+    const words = norm(q).split(' ').filter(Boolean);
+    if (!words.length) return [];
+    return ITEMS
+      .filter(it => words.every(w => it.key.includes(w)))
+      .map(it => ({it, score: (it.key.startsWith(words[0]) ? 0 : 1) +
+                             (it.kind === VIEW_NOW ? 0 : 0.5)}))
+      .sort((a, b) => a.score - b.score || a.it.key.length - b.it.key.length)
+      .slice(0, 12).map(x => x.it);
+  }
+
+  const esc = t => String(t).replace(/[&<>"]/g, c =>
+    ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+
+  function render() {
+    shown = match(input.value);
+    active = shown.length ? 0 : -1;
+    if (!input.value.trim()) { list.hidden = true; return; }
+    list.innerHTML = shown.length ? shown.map((it, i) =>
+      `<li role="option" data-i="${i}" class="${i === active ? 'on' : ''}">` +
+      `<span>${esc(it.name)}</span><small>${it.kind === 'teachers' ? 'معلمة' : 'فصل'}</small></li>`
+    ).join('') : '<li class="none">لا توجد نتائج مطابقة</li>';
+    list.hidden = false;
+  }
+
+  function mark() {
+    list.querySelectorAll('li[data-i]').forEach(li =>
+      li.classList.toggle('on', +li.dataset.i === active));
+    const el = list.querySelector('li.on');
+    if (el) el.scrollIntoView({block: 'nearest'});
+  }
+
+  function target(kind, id) {
+    return document.querySelector(`[data-find="${kind}-${id}"]`);
+  }
+
+  /* الإطار المتوهّج دائم: يُزال فقط ببحث آخر أو بتحديث الصفحة */
+  function glow(kind, id) {
+    document.querySelectorAll('.found-glow').forEach(el => el.classList.remove('found-glow'));
+    const el = target(kind, id);
+    if (!el) return false;
+    el.classList.add('found-glow');
+    el.scrollIntoView({behavior: 'smooth',
+                       block: el.tagName === 'TR' ? 'center' : 'start'});
+    return true;
+  }
+
+  function choose(it) {
+    if (!it) return;
+    list.hidden = true;
+    input.value = it.name;
+    input.blur();
+    if (it.kind === VIEW_NOW && glow(it.kind, it.id)) return;
+    /* الاسم في العرض الآخر: ننتقل إليه ونبحث مرة واحدة بعد التحميل */
+    try { sessionStorage.setItem(KEY, it.kind + '-' + it.id); } catch (e) {}
+    location.href = `/grid?view=${it.kind}&layout=${LAYOUT_NOW}&colored=${COLORED}`;
+  }
+
+  input.addEventListener('input', render);
+  input.addEventListener('focus', () => { if (input.value.trim()) render(); });
+  input.addEventListener('keydown', e => {
+    if (list.hidden && e.key !== 'Enter') return;
+    if (e.key === 'ArrowDown') { active = Math.min(shown.length - 1, active + 1); mark(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { active = Math.max(0, active - 1); mark(); e.preventDefault(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (list.hidden) render(); choose(shown[active]); }
+    else if (e.key === 'Escape') { list.hidden = true; }
+  });
+  list.addEventListener('mousedown', e => {
+    const li = e.target.closest('li[data-i]');
+    if (li) { e.preventDefault(); choose(shown[+li.dataset.i]); }
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#gsearch')) list.hidden = true;
+  });
+
+  /* بحث قادم من العرض الآخر - يُستهلك مرة واحدة فلا يعود بعد التحديث */
+  let pending = null;
+  try { pending = sessionStorage.getItem(KEY); sessionStorage.removeItem(KEY); } catch (e) {}
+  if (pending) {
+    const [kind, id] = pending.split('-');
+    const it = ITEMS.find(x => x.kind === kind && String(x.id) === id);
+    if (it) input.value = it.name;
+    window.addEventListener('load', () => glow(kind, id));
+  }
+})();
+</script>

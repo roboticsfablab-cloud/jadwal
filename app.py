@@ -1170,6 +1170,15 @@ def schedule_matrix(version_id, kind):
     return owners, cells, days, max_p, slots, limits, st, per_day, dict(totals)
 
 
+def search_items():
+    """أسماء الفصول والمعلمات لقائمة البحث في صفحة الجدول."""
+    out = [{"kind": "sections", "id": r["id"], "name": r["section_label"]}
+           for r in q(SECTIONS_SQL)]
+    out += [{"kind": "teachers", "id": r["id"], "name": r["name"]}
+            for r in q("SELECT id, name FROM teachers ORDER BY sort_order, id")]
+    return out
+
+
 @app.route("/grid")
 def grid():
     vid = current_version()
@@ -1190,6 +1199,7 @@ def grid():
             cells=cells, days=days, max_p=max_p, slots=slots,
             owner_limits=limits, per_day=per_day, totals=totals,
             conflicts=conflicts, empty=empty, colored=colored,
+            search_items=search_items(),
             breaks={x["period_number"] for x in slots if x["is_break"]})
 
     rows = q("SELECT sc.*, sb.name subject_name, sb.short_name, sb.color_index, "
@@ -1233,6 +1243,7 @@ def grid():
         owner_limits = {o["id"]: dict(limits) for o in owners}
 
     return render_template("grid.html", view=view, layout=layout,
+                           search_items=search_items(),
                            colored=colored, owners=owners, cells=cells,
                            days=days, max_p=max_p, slots=slots,
                            conflicts=conflicts, empty=empty,

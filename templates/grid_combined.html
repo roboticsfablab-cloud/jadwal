@@ -19,6 +19,7 @@
     <a href="{{ url_for('grid', view=view, layout='combined', colored=0) }}"
        class="{{ '' if colored else 'on' }}">بلا ألوان</a>
   </div>
+  {% include "grid_search.html" %}
   <div class="spacer"></div>
   <a class="btn soft" href="{{ url_for('print_view', kind=view, layout='combined', colored=1 if colored else 0) }}" target="_blank">معاينة للطباعة</a>
   <a class="btn soft" href="{{ url_for('export_pdf', kind=view, layout='combined', sig=1, colored=1 if colored else 0) }}">PDF</a>
@@ -66,7 +67,7 @@
     </thead>
     <tbody>
       {% for o in owners %}
-        <tr>
+        <tr data-find="{{ view }}-{{ o.id }}">
           <th class="day sticky-col">{{ o.title }}</th>
           <th class="day total sticky-total">{{ totals.get(o.id, 0) }}</th>
           {% for d in days %}

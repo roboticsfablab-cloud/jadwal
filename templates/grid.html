@@ -14,6 +14,7 @@
     <a href="{{ url_for('grid', view=view, colored=1) }}" class="{{ 'on' if colored }}">ملوّن</a>
     <a href="{{ url_for('grid', view=view, colored=0) }}" class="{{ '' if colored else 'on' }}">بلا ألوان</a>
   </div>
+  {% include "grid_search.html" %}
   <div class="spacer"></div>
   <a class="btn soft" href="{{ url_for('print_view', kind=view, colored=1 if colored else 0) }}" target="_blank">معاينة للطباعة</a>
   <a class="btn soft" href="{{ url_for('export_pdf', kind=view, sig=1, colored=1 if colored else 0) }}">PDF</a>
@@ -156,6 +157,7 @@
 
 {% for o in owners %}
 {% set lim = owner_limits.get(o.id, limits) %}
+<div class="owner-block" data-find="{{ view }}-{{ o.id }}">
 <div class="owner-title"><span>{{ o.title }}</span></div>
 <div class="gridwrap">
   <table class="sched {{ '' if colored else 'nocolor' }}">
@@ -201,6 +203,7 @@
     </tr>
     {% endfor %}
   </table>
+</div>
 </div>
 {% else %}
   <div class="card">
